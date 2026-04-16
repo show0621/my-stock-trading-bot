@@ -7,7 +7,7 @@ from strategy_engine import get_trading_signal
 # 1. 頁面初始化
 st.set_page_config(page_title="李孟霖 | 首席投研終端", layout="wide", initial_sidebar_state="expanded")
 
-# 2. 終極防護 CSS (抗深色模式 + RWD)
+# 2. 終極防護 CSS
 css_style = """
 <style>
     :root { color-scheme: light !important; }
@@ -40,7 +40,7 @@ css_style = """
     @media (max-width: 768px) {
         .status-grid { grid-template-columns: repeat(2, 1fr); gap: 15px; }
     }
-    .sidebar-footer { font-size: 11px; color: #888888; margin-top: 50px; border-top: 1px solid #EEE; padding-top: 10px; }
+    .sidebar-footer { font-size: 11px; color: #888888; margin-top: 50px; border-top: 1px solid #EEE; padding-top: 10px; line-height: 1.5; }
 </style>
 """
 st.markdown(css_style, unsafe_allow_html=True)
@@ -48,7 +48,8 @@ st.markdown(css_style, unsafe_allow_html=True)
 # 3. 側邊欄設定
 with st.sidebar:
     st.title("🎐 投資指揮中心")
-    cap = st.number_input("本金設定", value=200000)
+    # 將預設資金修改為兩百萬
+    cap = st.number_input("本金設定", value=2000000)
     
     industry_map = {
         "半導體核心": {"台積電 (2330)": "2330.TW", "聯發科 (2454)": "2454.TW", "日月光 (3711)": "3711.TW"},
@@ -65,12 +66,13 @@ with st.sidebar:
         ticker_name = st.selectbox("🎯 選擇標的", list(industry_map[selected_ind].keys()))
         ticker_symbol = industry_map[selected_ind][ticker_name]
 
-    # --- 作者與版本標記 ---
+    # --- 作者與完整論文標記 ---
     st.markdown(f"""
     <div class="sidebar-footer">
         <b>作者：</b> 李孟霖<br>
         <b>版本：</b> 20260416-V01<br>
-        <b>核心：</b> Time Series Momentum (2012)
+        <b>策略參考：</b><br>
+        <span style="font-size:10px;">Time Series Momentum<br>(Tobias J. Moskowitz, Yao Hua Ooi, Lasse Heje Pedersen, 2012)</span>
     </div>
     """, unsafe_allow_html=True)
 
@@ -95,9 +97,11 @@ if sig:
     prob = an['機率']
     html_report = f"""
     <div style="background:#FFFFFF; padding:20px; border:2px solid #B18D4D; border-radius:12px; color:#000;">
-        <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #E5E1D5; padding-bottom:8px; margin-bottom:15px;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:1px solid #E5E1D5; padding-bottom:10px; margin-bottom:15px;">
             <h3 style="margin:0; color:#9F353A;">⚖️ 首席深度投研報告：{ticker_name}</h3>
-            <span style="font-size:12px; color:#888;">學術參考：Moskowitz et al. (2012)</span>
+            <div style="font-size:11px; color:#888; text-align:right; max-width:250px;">
+                策略參考：Time Series Momentum<br>(Tobias J. Moskowitz, Yao Hua Ooi, Lasse Heje Pedersen, 2012)
+            </div>
         </div>
         <div style="display:grid; grid-template-columns: 1fr 1fr; gap:25px; font-size:14.5px; line-height:1.7;">
             <div>
@@ -136,17 +140,15 @@ if sig:
             with st.expander(f"📅 {row['日期']} | {row['動作']} | 價格: {row['價格']} | 結算: {row['餘額']:,}"):
                 st.markdown(row['分析'])
 
-    # --- 8. 訊號圖 (補回平倉綠色倒三角形) ---
+    # --- 8. 訊號圖 ---
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name="收盤價", line=dict(color="#000", width=1.5)))
     
     if not ledger_df.empty:
-        # 繪製進場紅三角
         longs = ledger_df[ledger_df['動作'].str.contains("買進")]
         if not longs.empty:
             fig.add_trace(go.Scatter(x=pd.to_datetime(longs['日期']), y=longs['價格'], mode='markers', name='波段進場', marker=dict(symbol='triangle-up', size=16, color='#9F353A')))
             
-        # 繪製平倉綠倒三角 (就是這裡被我不小心刪掉了)
         shorts = ledger_df[ledger_df['動作'].str.contains("平倉")]
         if not shorts.empty:
             fig.add_trace(go.Scatter(x=pd.to_datetime(shorts['日期']), y=shorts['價格'], mode='markers', name='平倉出場', marker=dict(symbol='triangle-down', size=16, color='#3A5F41')))
