@@ -10,56 +10,71 @@ st.set_page_config(page_title="2026 首席投研終端", layout="wide", initial_
 # 2. 終極防護 CSS (抗深色模式 + Base Web 破解 + RWD 狀態牆)
 css_style = """
 <style>
-    /* 全局背景與字體強制鎖定 */
+    /* 1. 終極銀彈：強制瀏覽器認知本網頁為亮色模式，阻擋 iOS 深色模式原生覆蓋 */
+    :root { color-scheme: light !important; }
+
+    /* 2. 全局背景與字體強制鎖定 */
     .stApp, .main { background-color: #F7F3E9 !important; }
     html, body, [class*="css"], p, span, div, h1, h2, h3, h4, h5, h6, label, li { 
         color: #000000 !important; 
         font-family: 'Noto Serif TC', serif; 
     }
     
-    /* 側邊欄與摺疊按鈕修復 (解決隱藏鈕看不到的問題) */
-    [data-testid="stSidebar"] { background-color: #FFFFFF !important; border-right: 1px solid #D6D2C4; }
-    button[kind="header"] svg, [data-testid="collapsedControl"] svg, button svg { 
-        fill: #000000 !important; color: #000000 !important; 
+    /* 3. 頂部標題列與側邊欄隱藏鈕 (解決左上角 >> 按鈕黑底問題) */
+    header[data-testid="stHeader"] { background-color: transparent !important; }
+    [data-testid="collapsedControl"] { 
+        background-color: #FFFFFF !important; 
+        border-radius: 50% !important; /* 變成漂亮的圓形按鈕 */
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1) !important;
     }
+    [data-testid="collapsedControl"] svg { fill: #000000 !important; }
+    
+    /* 4. 側邊欄內部背景 */
+    [data-testid="stSidebar"] { background-color: #FFFFFF !important; border-right: 1px solid #D6D2C4; }
 
-    /* 輸入框與 Base Web 下拉選單終極修復 (解決黑底黑字問題) */
+    /* 5. 輸入框與按鈕 (解決本金設定 - + 按鈕黑底問題) */
     input, select, textarea { 
         background-color: #FFFFFF !important; 
         color: #000000 !important; 
-        -webkit-text-fill-color: #000000 !important; /* 破解 iOS 深色模式字體鎖定 */
+        -webkit-text-fill-color: #000000 !important; 
     }
+    /* 強制將數字加減按鈕變成白底黑字 */
+    button[data-testid="stNumberInputStepDown"], 
+    button[data-testid="stNumberInputStepUp"] {
+        background-color: #F7F3E9 !important; 
+        color: #000000 !important;
+    }
+    button[data-testid="stNumberInputStepDown"] svg, 
+    button[data-testid="stNumberInputStepUp"] svg {
+        fill: #000000 !important;
+    }
+    
+    /* 6. Base Web 下拉選單終極修復 */
     div[data-baseweb="select"] > div { background-color: #FFFFFF !important; border-color: #D6D2C4 !important; }
     div[data-baseweb="select"] span { color: #000000 !important; -webkit-text-fill-color: #000000 !important; }
+    div[data-baseweb="select"] svg { fill: #000000 !important; } /* 讓下拉的小箭頭變黑 */
     
-    /* 下拉彈出視窗清單 (點開後的選項) */
     div[data-baseweb="popover"], div[data-baseweb="popover"] > div { background-color: #FFFFFF !important; }
     ul[role="listbox"] { background-color: #FFFFFF !important; }
     li[role="option"] { background-color: #FFFFFF !important; color: #000000 !important; }
     li[role="option"]:hover { background-color: #F7F3E9 !important; }
     
-    /* 日誌展開器修復 */
+    /* 7. 日誌展開器修復 */
     [data-testid="stExpander"] { background-color: #FFFFFF !important; border: 1px solid #D6D2C4 !important; border-radius: 8px !important; }
     [data-testid="stExpanderDetails"] { background-color: #FFFFFF !important; }
     .stExpander svg { fill: #434343 !important; }
 
-    /* RWD 狀態牆設計 (解決手機端數字擠壓換行的問題) */
+    /* 8. RWD 狀態牆設計 (解決手機端數字擠壓換行的問題) */
     .status-grid {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 10px;
-        background: #FFFFFF;
-        padding: 15px;
-        border-radius: 10px;
-        border: 1px solid #D6D2C4;
-        margin-bottom: 20px;
+        display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+        background: #FFFFFF; padding: 15px; border-radius: 10px;
+        border: 1px solid #D6D2C4; margin-bottom: 20px;
     }
     .s-title { font-size: 12px; color: #666666; text-align: center; margin-bottom: 4px; }
     .s-val { font-size: 18px; font-weight: 600; color: #000000; text-align: center; }
     .s-val.red { color: #9F353A; }
     .s-val.gold { color: #B18D4D; }
     
-    /* 當螢幕寬度小於 768px (手機版) 時，自動變成 2x2 方陣 */
     @media (max-width: 768px) {
         .status-grid { grid-template-columns: repeat(2, 1fr); gap: 15px; padding: 12px; }
         .s-val { font-size: 16px; }
@@ -99,7 +114,7 @@ if sig is not None:
     an = sig['report']
     st_row = sig['stats']
 
-    # --- 5. 專業操盤狀態牆 (導入 RWD 樣式) ---
+    # --- 5. 專業操盤狀態牆 ---
     st.markdown(f"""
     <div class="status-grid">
         <div><div class="s-title">壓力 / 支撐位</div><div class="s-val">{st_row['Res']:.0f} / {st_row['Sup']:.0f}</div></div>
@@ -157,13 +172,12 @@ if sig is not None:
         template="plotly_white", 
         paper_bgcolor="#F7F3E9", 
         plot_bgcolor="#F7F3E9", 
-        height=400, # 縮減高度適應手機
-        margin=dict(l=0, r=0, t=20, b=10), # 移除多餘邊距
-        dragmode='pan', # 預設改為平移，避免手機滑動時誤觸放大變形
+        height=400, 
+        margin=dict(l=0, r=0, t=20, b=10), 
+        dragmode='pan',
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
     
-    # 關閉干擾的浮動工具列
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': False})
 
 else:
