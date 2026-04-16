@@ -13,38 +13,45 @@ def calculate_yz_volatility(df, window=20):
         v_c = log_cc.rolling(window=window).var()
         v_rs = (log_ho * (log_ho - log_co) + log_lo * (log_lo - log_co)).rolling(window=window).mean()
         k = 0.34 / (1.34 + (window + 1) / (window - 1))
-        return np.sqrt((v_o + k * v_c + (1 - k) * v_rs) * 252)
+        sigma_sq = v_o + k * v_c + (1 - k) * v_rs
+        return np.sqrt(sigma_sq * 252)
     except:
         return pd.Series(0.2, index=df.index)
 
 def get_trading_signal(ticker, target_vol=0.15):
     df = yf.download(ticker, period="1y", progress=False)
+    # 處理 Multi-index 問題
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     if 'Adj Close' not in df.columns:
         df['Adj Close'] = df['Close']
     
-    # 內建計算指標 (不依賴 pandas_ta)
-    df['SMA_20'] = df['Adj Close'].rolling(20).mean()
-    df['SMA_60'] = df['Adj Close'].rolling(60).mean()
-    exp1 = df['Adj Close'].ewm(span=12, adjust=False).mean()
-    exp2 = df['Adj Close'].ewm(span=26, adjust=False).mean()
-    df['MACD'] = exp1 - exp2
-    df['MACD_Sig'] = df['MACD'].ewm(span=9, adjust=False).mean()
-    df['MACD_Hist'] = df['MACD'] - df['MACD_Sig']
+    # 手動計算指標 (不依賴 pandas_ta)
+    df['SMA_20'] = df['Adj Close'].rolling(window=20).mean()
+    df['SMA_60'] = df['Adj Close'].rolling(window=60).mean()
+    
+    # MACD 計算
+    ema12 = df['Adj Close'].ewm(span=12, adjust=False).mean()
+    ema26 = df['Adj Close'].ewm(span=26, adjust=False).mean()
+    df['MACD_Line'] = ema12 - ema26
+    df['MACD_Signal'] = df['MACD_Line'].ewm(span=9, adjust=False).mean()
+    df['MACD_Hist'] = df['MACD_Line'] - df['MACD_Signal']
     
     df['yz_vol'] = calculate_yz_volatility(df)
     df['mom_score'] = (df['Adj Close'].pct_change(20) > 0).astype(int) + (df['Adj Close'].pct_change(60) > 0).astype(int)
     
     latest = df.iloc[-1]
+    vol = max(latest['yz_vol'], 0.05)
+    pos_size = (target_vol / vol) * (latest['mom_score'] / 2)
+    
     return {
         "price": latest['Adj Close'],
         "volatility": latest['yz_vol'],
         "mom_score": latest['mom_score'],
-        "suggested_pos": min((target_vol / max(latest['yz_vol'], 0.05)) * (latest['mom_score'] / 2), 1.2),
+        "suggested_pos": min(pos_size, 1.2),
         "history": df
     }
 
 if __name__ == "__main__":
-    # 自動更新邏輯保持不變...
+    # 自動更新 CSV 的邏輯保持不變
     pass
