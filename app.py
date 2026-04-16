@@ -48,7 +48,6 @@ st.markdown(css_style, unsafe_allow_html=True)
 # 3. 側邊欄設定
 with st.sidebar:
     st.title("🎐 投資指揮中心")
-    # 將預設資金修改為兩百萬
     cap = st.number_input("本金設定", value=2000000)
     
     industry_map = {
