@@ -4,10 +4,10 @@ import pandas as pd
 import plotly.graph_objects as go
 from strategy_engine import get_trading_signal
 
-# 初始化網頁介面
+# 初始化網頁
 st.set_page_config(page_title="2026 量化操盤日誌", layout="wide")
 
-# --- 側邊欄：參數輸入 ---
+# --- 側邊欄：帳戶設定 ---
 with st.sidebar:
     st.header("🎎 帳戶設定")
     initial_cap = st.number_input("初始資金 (TWD)", value=200000)
@@ -30,129 +30,89 @@ pos_ratio = round(float(signal['suggested_pos'] * 100), 1)
 vol = round(float(signal['volatility'] * 100), 2)
 mom = int(signal['mom_score'])
 
-# 計算建議口數
-contract_value = price * 100 
-suggested_lots = int((initial_cap * (pos_ratio/100)) / contract_value) if contract_value > 0 else 0
+# --- 專業期貨計算邏輯 (與 Claude 網頁一致) ---
+# 1. 保證金計算 (假設小期規格 100 股, 原始保證金 13.5%)
+margin_rate = 0.135
+margin_per_lot = price * 100 * margin_rate
+target_investment = initial_cap * (pos_ratio / 100)
+suggested_lots = int(target_investment / margin_per_lot) if margin_per_lot > 0 else 0
+max_lots = int(initial_cap / margin_per_lot) if margin_per_lot > 0 else 0
 
-# --- 日式配色定義 ---
-# 背景: #F7F3E9 (米白/和紙), 邊框: #D6D2C4 (石紋), 文字: #434343 (墨)
-# 多頭: #9F353A (茜色/暗紅), 空頭: #3A5F41 (松葉綠)
+# 2. 稅費計算 (來回)
+tax_per_lot_one_way = price * 100 * 0.00002
+total_tax = tax_per_lot_one_way * suggested_lots * 2
+total_fee = 20 * suggested_lots * 2  # 假設單邊 20 元
+total_cost = total_tax + total_fee
+
+# 3. 跳動損益
+tick_profit = 100 * suggested_lots
+
+# --- 判定動作與配色 ---
 if mom >= 1 and pos_ratio > 10:
-    action_text, action_color, bg_light = "🟢 建議建立多單 (買進)", "#9F353A", "#FCEEEF"
+    action_text, action_color, bg_light = "🟢 建議建立多單 (Long Position)", "#9F353A", "#FCEEEF"
 elif mom == 0 and pos_ratio < 10:
-    action_text, action_color, bg_light = "⚪ 建議觀望或清倉", "#434343", "#F2F2F2"
+    action_text, action_color, bg_light = "🔴 建議觀望或清倉 (Exit/Neutral)", "#434343", "#F2F2F2"
 else:
-    action_text, action_color, bg_light = "🟡 部位調整 (中性)", "#B18D4D", "#FDF7E6"
+    action_text, action_color, bg_light = "🟡 部位調整 (Rebalance)", "#B18D4D", "#FDF7E6"
 
-# --- 嵌入日式精美 HTML ---
+# --- 嵌入日式專業 HTML ---
 html_content = f"""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;600&family=IBM+Plex+Mono&display=swap');
-    .jp-container {{
-        background: #F7F3E9;
-        color: #434343;
-        font-family: 'Noto Serif TC', serif;
-        padding: 25px;
-        border-radius: 12px;
-        border: 2px solid #D6D2C4;
-    }}
-    .grid {{
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 15px;
-        margin-bottom: 25px;
-    }}
-    .card {{
-        background: #FFFFFF;
-        padding: 15px;
-        border: 1px solid #E5E1D5;
-        border-radius: 8px;
-        text-align: center;
-        box-shadow: 2px 2px 5px rgba(0,0,0,0.02);
-    }}
-    .label {{
-        color: #8C8C8C;
-        font-size: 12px;
-        letter-spacing: 1px;
-        margin-bottom: 8px;
-    }}
-    .value {{
-        font-family: 'IBM Plex Mono', monospace;
-        font-size: 26px;
-        font-weight: 600;
-    }}
-    .action-banner {{
-        background: {bg_light};
-        border: 1px solid {action_color};
-        padding: 18px;
-        border-radius: 8px;
-        margin-bottom: 25px;
-        text-align: center;
-    }}
-    .action-title {{
-        font-size: 22px;
-        font-weight: 600;
-        color: {action_color};
-    }}
-    .report-box {{
-        background: #FFFFFF;
-        padding: 20px;
-        border-radius: 8px;
-        border: 1px solid #E5E1D5;
-        line-height: 1.8;
-        font-size: 15px;
-    }}
+    .jp-container {{ background: #F7F3E9; color: #434343; font-family: 'Noto Serif TC', serif; padding: 25px; border-radius: 12px; border: 2px solid #D6D2C4; }}
+    .grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 25px; }}
+    .card {{ background: #FFFFFF; padding: 15px; border: 1px solid #E5E1D5; border-radius: 8px; text-align: center; }}
+    .label {{ color: #8C8C8C; font-size: 11px; letter-spacing: 1px; margin-bottom: 8px; text-transform: uppercase; }}
+    .value {{ font-family: 'IBM Plex Mono', monospace; font-size: 26px; font-weight: 600; }}
+    .action-banner {{ background: {bg_light}; border: 1px solid {action_color}; padding: 18px; border-radius: 8px; margin-bottom: 25px; text-align: center; }}
+    .action-title {{ font-size: 22px; font-weight: 600; color: {action_color}; }}
+    .analysis-box {{ background: #FFFFFF; padding: 20px; border-radius: 8px; border: 1px solid #E5E1D5; font-size: 14px; line-height: 1.7; }}
+    .section-title {{ color: #B18D4D; font-weight: 600; border-bottom: 1px solid #E5E1D5; margin-bottom: 10px; padding-bottom: 5px; }}
+    .highlight {{ color: #9F353A; font-weight: 600; }}
 </style>
+
 <div class="jp-container">
     <div class="grid">
-        <div class="card">
-            <div class="label">當前市價</div>
-            <div class="value">{price:,}</div>
-        </div>
-        <div class="card">
-            <div class="label">建議操作口數</div>
-            <div class="value" style="color:#B18D4D">{suggested_lots} 口</div>
-        </div>
-        <div class="card">
-            <div class="label">YZ 波動率</div>
-            <div class="value">{vol}%</div>
-        </div>
-        <div class="card">
-            <div class="label">建議持倉比</div>
-            <div class="value" style="color:{action_color};">{pos_ratio}%</div>
-        </div>
+        <div class="card"><div class="label">Current Price</div><div class="value">{price:,}</div></div>
+        <div class="card"><div class="label">建議操作口數</div><div class="value" style="color:#B18D4D">{suggested_lots} 口</div></div>
+        <div class="card"><div class="label">YZ 波動率</div><div class="value">{vol}%</div></div>
+        <div class="card"><div class="label">建議持倉比</div><div class="value" style="color:{action_color};">{pos_ratio}%</div></div>
     </div>
+
     <div class="action-banner">
         <div class="action-title">{action_text}</div>
     </div>
-    <div class="report-box">
-        <b style="color:#B18D4D; font-size:16px;">📖 策略日誌分析</b><br>
-        今日標的 <b>{selected_name}</b> 趨勢評分為 {mom}/2。
-        基於當前波動率調節，系統建議將曝險控制在帳戶總值的 {pos_ratio}%。
-        請注意日式風控準則：在市場動盪時減少交易頻率，保持心境平穩。
+
+    <div class="analysis-box">
+        <div class="section-title">📊 口數計算結果 (基於 {initial_cap:,} 資金)</div>
+        小型{selected_name}期貨 (1口=100股)，原始保證金率為 <span class="highlight">13.5%</span>：<br>
+        • 每口保證金：{price:,} × 100 × 13.5% = <span class="highlight">{int(margin_per_lot):,} 元</span><br>
+        • 策略分配額：{initial_cap:,} × {pos_ratio}% 持倉比 = {int(target_investment):,} 元<br>
+        • <b>建議買入 {suggested_lots} 口</b> (佔用 {int(margin_per_lot * suggested_lots):,} 元，保留緩衝金 {int(initial_cap - (margin_per_lot * suggested_lots)):,} 元)<br>
+        • 若激進配置 (不限持倉比) 最多可買 {max_lots} 口，但不建議。
+
+        <div class="section-title" style="margin-top:20px;">💸 預估稅費與損益 (來回)</div>
+        • 期交稅 (0.00002)：{int(total_tax)} 元<br>
+        • 手續費 (預估)：{int(total_fee)} 元<br>
+        • <b>合計摩擦成本：約 {int(total_cost)} 元</b><br>
+        • <b>跳動損益：</b>每跳動 1 點，{suggested_lots}口合約損益為 <span class="highlight">{int(tick_profit)} 元</span>。
+
+        <div style="margin-top:20px; font-size:12px; color:#8C8C8C; border-top:1px dashed #D6D2C4; padding-top:10px;">
+        ⚠️ 本儀表板為模擬投資工具，不構成實際投資建議。期貨具高槓桿風險，請自行評估。
+        </div>
     </div>
 </div>
 """
-components.html(html_content, height=520)
+components.html(html_content, height=650)
 
-# --- 底部圖表 (改為亮色系日式風格) ---
-st.markdown("### 📉 策略歷史點位追蹤")
+# --- 底部圖表 ---
+st.markdown("### 📈 策略點位歷史追蹤")
 fig = go.Figure()
-fig.add_trace(go.Scatter(x=df.index, y=df['Adj Close'], name="還原價格", line=dict(color="#434343", width=2)))
-
-# 標示買入點 (茜色三角形)
+fig.add_trace(go.Scatter(x=df.index, y=df['Adj Close'], name="價格", line=dict(color="#434343", width=1.5)))
 if 'mom_score' in df.columns:
     buy_signals = df[df['mom_score'] == 2].index
     if not buy_signals.empty:
-        fig.add_trace(go.Scatter(x=buy_signals, y=df.loc[buy_signals, 'Adj Close'], mode='markers', name='買入訊號', marker=dict(color='#9F353A', symbol='triangle-up', size=12)))
+        fig.add_trace(go.Scatter(x=buy_signals, y=df.loc[buy_signals, 'Adj Close'], mode='markers', name='買入訊號', marker=dict(color='#9F353A', symbol='triangle-up', size=10)))
 
-fig.update_layout(
-    template="plotly_white",
-    paper_bgcolor="#F7F3E9",
-    plot_bgcolor="#F7F3E9",
-    font=dict(color="#434343", family="Noto Serif TC"),
-    margin=dict(l=10, r=10, t=10, b=10),
-    xaxis=dict(gridcolor="#E5E1D5"),
-    yaxis=dict(gridcolor="#E5E1D5")
-)
+fig.update_layout(template="plotly_white", paper_bgcolor="#F7F3E9", plot_bgcolor="#F7F3E9", font=dict(color="#434343", family="Noto Serif TC"), margin=dict(l=10, r=10, t=10, b=10))
 st.plotly_chart(fig, use_container_width=True)
