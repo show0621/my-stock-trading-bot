@@ -1,14 +1,22 @@
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import os
 
 def calculate_yz_volatility(df, window=20):
     """精確計算 Yang-Zhang 波動率 (考慮隔夜跳空)"""
-    log_ho = np.log(df['High'] / df['Open'])
-    log_lo = np.log(df['Low'] / df['Open'])
-    log_co = np.log(df['Close'] / df['Open'])
-    log_oc = np.log(df['Open'] / df['Close'].shift(1))
-    log_cc = np.log(df['Close'] / df['Close'].shift(1))
+    # 確保資料是 Series 格式
+    o = df['Open']
+    h = df['High']
+    l = df['Low']
+    c = df['Close']
+    c_prev = df['Close'].shift(1)
+    
+    log_ho = np.log(h / o)
+    log_lo = np.log(l / o)
+    log_co = np.log(c / o)
+    log_oc = np.log(o / c_prev)
+    log_cc = np.log(c / c_prev)
     
     v_o = log_oc.rolling(window=window).var()
     v_c = log_cc.rolling(window=window).var()
@@ -19,47 +27,74 @@ def calculate_yz_volatility(df, window=20):
     return np.sqrt(sigma_sq * 252)
 
 def get_trading_signal(ticker, target_vol=0.15):
-    # 抓取台股數據 (還原股價)
-    df = yf.download(ticker, period="1y")
+    # 1. 抓取數據
+    df = yf.download(ticker, period="1y", progress=False)
     
-    # 1. 計算動能因子 (20, 60, 120D)
+    # --- 修正 Multi-Index 問題 ---
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    
+    # 確保 Adj Close 存在
+    if 'Adj Close' not in df.columns:
+        df['Adj Close'] = df['Close']
+        
+    # 2. 計算動能因子 (20, 60D 投票)
     df['mom_score'] = (df['Adj Close'].pct_change(20) > 0).astype(int) + \
                       (df['Adj Close'].pct_change(60) > 0).astype(int)
     
-    # 2. 計算 YZ 波動率
+    # 3. 計算 YZ 波動率
     df['yz_vol'] = calculate_yz_volatility(df)
     
-    # 3. 部位調節邏輯 (Position Sizing)
-    current_vol = df['yz_vol'].iloc[-1]
-    mom_score = df['mom_score'].iloc[-1]
+    # 4. 取得最新一筆數據
+    latest = df.iloc[-1]
+    current_vol = latest['yz_vol']
+    mom_score = latest['mom_score']
+    
     # 建議持倉比 = (目標波動 / 當前波動) * (動能分數 / 2)
-    pos_size = (target_vol / max(current_vol, 0.1)) * (mom_score / 2)
+    # 避免分母為 0
+    safe_vol = max(current_vol, 0.05)
+    pos_size = (target_vol / safe_vol) * (mom_score / 2)
     
     return {
-        "price": df['Adj Close'].iloc[-1],
+        "price": latest['Adj Close'],
         "volatility": current_vol,
         "mom_score": mom_score,
-        "suggested_pos": min(pos_size, 1.2), # 最高 1.2 倍槓桿
+        "suggested_pos": min(pos_size, 1.2), # 槓桿上限 1.2 倍
         "history": df
     }
-# 在 strategy_engine.py 的最下方加入
+
 if __name__ == "__main__":
-    import sys
-    # 這裡可以加入你想要監控的多個標的
-    tickers = ["2330.TW", "2454.TW", "2317.TW"]
+    # 此段落供 GitHub Actions 每天自動執行存檔
+    tickers = ["2330.TW", "2454.TW", "2317.TW", "^TWII"]
     all_results = []
     
-    for t in tickers:
-        res = get_trading_signal(t)
-        all_results.append({
-            "Date": pd.Timestamp.now().strftime('%Y-%m-%d'),
-            "Ticker": t,
-            "Price": res['price'],
-            "Volatility": res['volatility'],
-            "Mom_Score": res['mom_score'],
-            "Suggested_Pos": res['suggested_pos']
-        })
+    print("🚀 正在執行每日策略掃描...")
     
-    # 產出 CSV 檔
-    pd.DataFrame(all_results).to_csv("daily_status.csv", index=False)
-    print("Daily status updated successfully.")
+    for t in tickers:
+        try:
+            res = get_trading_signal(t)
+            all_results.append({
+                "Date": pd.Timestamp.now(tz='Asia/Taipei').strftime('%Y-%m-%d'),
+                "Ticker": t,
+                "Price": round(res['price'], 2),
+                "Volatility": round(res['volatility'], 4),
+                "Mom_Score": res['mom_score'],
+                "Suggested_Pos": round(res['suggested_pos'], 4)
+            })
+            print(f"✅ {t} 處理完成")
+        except Exception as e:
+            print(f"❌ {t} 處理失敗: {e}")
+    
+    # 產出或更新 CSV 檔
+    output_file = "daily_status.csv"
+    new_df = pd.DataFrame(all_results)
+    
+    if os.path.exists(output_file):
+        existing_df = pd.read_csv(output_file)
+        # 合併並去重 (以日期與代號為準)
+        combined_df = pd.concat([existing_df, new_df]).drop_duplicates(subset=['Date', 'Ticker'], keep='last')
+        combined_df.to_csv(output_file, index=False)
+    else:
+        new_df.to_csv(output_file, index=False)
+        
+    print(f"💾 數據已存至 {output_file}")
