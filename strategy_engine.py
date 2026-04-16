@@ -8,54 +8,74 @@ def calculate_yz_volatility(df, window=20):
         c_prev = df['Close'].shift(1)
         log_ho, log_lo, log_co = np.log(h/o), np.log(l/o), np.log(c/o)
         log_oc, log_cc = np.log(o/c_prev), np.log(c/c_prev)
-        v_o, v_c = log_oc.rolling(window).var(), log_cc.rolling(window).var()
-        v_rs = (log_ho * (log_ho - log_co) + log_lo * (log_lo - log_co)).rolling(window).mean()
+        v_o = log_oc.rolling(window=window).var()
+        v_c = log_cc.rolling(window=window).var()
+        v_rs = (log_ho * (log_ho - log_co) + log_lo * (log_lo - log_co)).rolling(window=window).mean()
         k = 0.34 / (1.34 + (window + 1) / (window - 1))
         return np.sqrt((v_o + k * v_c + (1 - k) * v_rs) * 252)
-    except: return pd.Series(0.18, index=df.index)
+    except:
+        return pd.Series(0.18, index=df.index)
 
 def get_trading_signal(ticker, target_vol=0.15, initial_cap=200000):
     df = yf.download(ticker, period="1y", progress=False)
     if df.empty: return None
     if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
     
-    # 指標計算
+    # 指標計算 (不使用外部套件)
     df['SMA20'] = df['Close'].rolling(20).mean()
     df['SMA5'] = df['Close'].rolling(5).mean()
     df['yz_vol'] = calculate_yz_volatility(df)
-    df['RSI'] = 100 - (100 / (1 + (df['Close'].diff().where(df['Close'].diff() > 0, 0).rolling(14).mean() / 
-                                  -df['Close'].diff().where(df['Close'].diff() < 0, 0).rolling(14).mean())))
+    
+    # RSI 計算
+    diff = df['Close'].diff()
+    up = diff.where(diff > 0, 0).rolling(14).mean()
+    down = -diff.where(diff < 0, 0).rolling(14).mean()
+    df['RSI'] = 100 - (100 / (1 + (up/down)))
+    
+    # MACD 計算
+    ema12 = df['Close'].ewm(span=12, adjust=False).mean()
+    ema26 = df['Close'].ewm(span=26, adjust=False).mean()
+    df['MACD_Line'] = ema12 - ema26
+    df['MACD_Hist'] = df['MACD_Line'] - df['MACD_Line'].ewm(span=9, adjust=False).mean()
 
-    # 回測邏輯：動態風控 + 7天限制
+    # 7天波段回測邏輯
     balance, in_pos, buy_price, entry_idx = initial_cap, False, 0, 0
     trades, equity_curve = [], []
 
     for i in range(30, len(df)):
         row, date_str = df.iloc[i], df.index[i].strftime('%Y/%m/%d')
         
-        # 買入訊號：站上20MA + RSI低位回升
-        if (row['Close'] > row['SMA20']) and (row['RSI'] > 45) and not in_pos:
+        # 買入條件：股價站上20MA + MACD柱狀翻正 + RSI不超買 (符合TEJ動能邏輯)
+        if (row['Close'] > row['SMA20']) and (row['MACD_Hist'] > 0) and (row['RSI'] < 65) and not in_pos:
             in_pos, buy_price, entry_idx = True, row['Close'], i
             trades.append({
                 "日期": date_str, "動作": "▲ 買進", "價格": round(buy_price, 1),
-                "日誌": f"股價站上20MA，RSI為{row['RSI']:.1f}動能轉強。同步執行保證金調節。"
+                "日誌": f"偵測到多頭動能。RSI為{row['RSI']:.1f}，MACD轉正且站上20MA，形成多頭排列形態。"
             })
         
-        # 賣出條件：動態停損(-3%)、動態停利(+6%)、或強制7天
+        # 賣出條件：+6%停利 / -3%停損 / 滿7天 / 跌破5MA
         elif in_pos:
             days_held = i - entry_idx
             pnl_pct = (row['Close'] - buy_price) / buy_price
             
             exit_reason = ""
-            if pnl_pct <= -0.03: exit_reason = "觸發動態停損 (-3%)"
-            elif pnl_pct >= 0.06: exit_reason = "觸發預期停利 (+6%)"
-            elif days_held >= 7: exit_reason = "強制平倉 (7天週期結束)"
+            if pnl_pct >= 0.06: exit_reason = "觸發動態停利 (+6%)"
+            elif pnl_pct <= -0.03: exit_reason = "觸發動態停損 (-3%)"
+            elif days_held >= 7: exit_reason = "波段周期結束 (強制7天平倉)"
             elif row['Close'] < row['SMA5']: exit_reason = "趨勢轉弱 (跌破5MA)"
 
             if exit_reason:
-                pnl_val = (row['Close'] - buy_price) * 100 * 4
+                pnl_val = (row['Close'] - buy_price) * 100 * 4 # 模擬4口小期
                 balance += pnl_val
                 in_pos = False
                 trades.append({
                     "日期": date_str, "動作": "▼ 賣出", "價格": round(row['Close'], 1),
-                    "日誌": f"{exit_
+                    "日誌": f"{exit_reason}。累積損益影響：{int(pnl_val):,} 元。"
+                })
+        
+        equity_curve.append(balance + ((row['Close'] - buy_price) * 400 if in_pos else 0))
+
+    return {
+        "history": df, "ledger": trades[::-1], "equity": int(balance), 
+        "curve": equity_curve, "rsi": df.iloc[-1]['RSI'], "macd": df.iloc[-1]['MACD_Hist']
+    }
