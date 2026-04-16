@@ -46,12 +46,12 @@ css_style = """
         display: grid; grid-template-columns: 1fr 1fr; gap: 25px; font-size: 14.5px; line-height: 1.7;
     }
 
-    /* 手機版適配 (螢幕小於768px時啟動) */
+    /* 手機版適配 */
     @media (max-width: 768px) {
         .status-grid { grid-template-columns: repeat(2, 1fr); gap: 15px; }
-        .report-header { flex-direction: column; gap: 8px; } /* 標題跟學術參考在手機上自動分上下行 */
+        .report-header { flex-direction: column; gap: 8px; }
         .report-header div { text-align: left !important; max-width: 100% !important; }
-        .report-grid { grid-template-columns: 1fr; gap: 15px; } /* 報告從雙欄變成單欄堆疊，不擠壓 */
+        .report-grid { grid-template-columns: 1fr; gap: 15px; } 
     }
     .sidebar-footer { font-size: 11px; color: #888888; margin-top: 50px; border-top: 1px solid #EEE; padding-top: 10px; line-height: 1.5; }
 </style>
@@ -78,7 +78,6 @@ with st.sidebar:
         ticker_name = st.selectbox("🎯 選擇標的", list(industry_map[selected_ind].keys()))
         ticker_symbol = industry_map[selected_ind][ticker_name]
 
-    # --- 作者與完整論文標記 ---
     st.markdown(f"""
     <div class="sidebar-footer">
         <b>作者：</b> 李孟霖<br>
@@ -100,74 +99,4 @@ if sig:
     <div class="status-grid">
         <div><div class="s-title">壓力 / 支撐位</div><div class="s-val">{st_row['Res']:.0f} / {st_row['Sup']:.0f}</div></div>
         <div><div class="s-title">停損 / 停利點</div><div class="s-val" style="color:#9F353A;">{st_row['SL']:.1f} / {st_row['TP']:.1f}</div></div>
-        <div><div class="s-title">趨勢信心 / YZ年化</div><div class="s-val">{st_row['Confidence']:.2f} / {st_row['YZ_Vol']:.1%}</div></div>
-        <div><div class="s-title">動態配置權重</div><div class="s-val" style="color:#B18D4D;">{st_row['Weight']:.1%}</div></div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # --- 6. 深度報告 (徹底解除高度限制) ---
-    prob = an['機率']
-    html_report = f"""
-    <div style="background:#FFFFFF; padding:20px; border:2px solid #B18D4D; border-radius:12px; color:#000; margin-bottom:20px;">
-        <div class="report-header">
-            <h3 style="margin:0; color:#9F353A;">⚖️ 首席深度投研報告：{ticker_name}</h3>
-            <div style="font-size:11px; color:#888; text-align:right; max-width:250px;">
-                策略參考：Time Series Momentum<br>(Tobias J. Moskowitz, Yao Hua Ooi, Lasse Heje Pedersen, 2012)
-            </div>
-        </div>
-        <div class="report-grid">
-            <div>
-                <b style="color:#9F353A;">【利多題材與觸及率】</b><br>{an['利多']}<br><br>
-                <b style="color:#3A5F41;">【利空風險與觸及率】</b><br>{an['利空']}<br><br>
-                <b>【核心利基點】</b><br>{an['利基']}
-            </div>
-            <div>
-                <b>【最新法說題材】</b><br>{an['題材']}<br><br>
-                <b>【未來展望 (Outlook)】</b><br>{an['展望']}<br><br>
-                <b>【機率分布】</b>多頭 <span style="color:#9F353A; font-weight:bold;">{prob['多']}%</span> | 盤整 {prob['盤']}% | 空頭 {prob['空']}%
-            </div>
-        </div>
-    </div>
-    """
-    # 關鍵修正：不再使用 components.html(height=450)，改用 st.markdown，讓高度隨文字長短自由伸展！
-    st.markdown(html_report, unsafe_allow_html=True)
-
-    # --- 7. 帳戶與分頁日誌 ---
-    unreal_str = f" <span style='font-size:15px; color:{'#9F353A' if st_row['Unrealized_PnL'] >= 0 else '#3A5F41'};'>(含未平倉損益：{st_row['Unrealized_PnL']:+.0f} TWD)</span>" if st_row['Is_Holding'] else ""
-    st.markdown(f"### 💰 帳戶資金變動：總淨值 {sig['equity']:,} TWD {unreal_str}", unsafe_allow_html=True)
-    
-    if not ledger_df.empty:
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            csv_data = ledger_df.to_csv(index=False).encode('utf-8-sig')
-            st.download_button("📥 下載完整歷史交易紀錄 (CSV)", data=csv_data, file_name=f"{ticker_name}_TSMOM_Report.csv", mime="text/csv")
-        with col2:
-            items_per_page = 10
-            total_pages = max(1, (len(ledger_df) - 1) // items_per_page + 1)
-            page_num = st.number_input(f"📄 分頁瀏覽 (共 {total_pages} 頁)", min_value=1, max_value=total_pages, value=1)
-            
-        start_idx = (page_num - 1) * items_per_page
-        end_idx = start_idx + items_per_page
-        
-        for _, row in ledger_df.iloc[start_idx:end_idx].iterrows():
-            with st.expander(f"📅 {row['日期']} | {row['動作']} | 價格: {row['價格']} | 結算: {row['餘額']:,}"):
-                st.markdown(row['分析'])
-
-    # --- 8. 訊號圖 ---
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name="收盤價", line=dict(color="#000", width=1.5)))
-    
-    if not ledger_df.empty:
-        longs = ledger_df[ledger_df['動作'].str.contains("買進")]
-        if not longs.empty:
-            fig.add_trace(go.Scatter(x=pd.to_datetime(longs['日期']), y=longs['價格'], mode='markers', name='波段進場', marker=dict(symbol='triangle-up', size=16, color='#9F353A')))
-            
-        shorts = ledger_df[ledger_df['動作'].str.contains("平倉")]
-        if not shorts.empty:
-            fig.add_trace(go.Scatter(x=pd.to_datetime(shorts['日期']), y=shorts['價格'], mode='markers', name='平倉出場', marker=dict(symbol='triangle-down', size=16, color='#3A5F41')))
-            
-    fig.update_layout(template="plotly_white", paper_bgcolor="#F7F3E9", plot_bgcolor="#F7F3E9", height=400, margin=dict(l=0, r=0, t=20, b=10), dragmode='pan')
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-
-else:
-    st.error("❌ 系統初始化失敗，請檢查網路連線或代號輸入。")
+        <div><div class="s-title">趨勢信心 / YZ年化</div><div class="s-val">{st_
