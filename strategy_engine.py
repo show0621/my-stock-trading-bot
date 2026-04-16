@@ -42,3 +42,24 @@ def get_trading_signal(ticker, target_vol=0.15):
         "suggested_pos": min(pos_size, 1.2), # 最高 1.2 倍槓桿
         "history": df
     }
+# 在 strategy_engine.py 的最下方加入
+if __name__ == "__main__":
+    import sys
+    # 這裡可以加入你想要監控的多個標的
+    tickers = ["2330.TW", "2454.TW", "2317.TW"]
+    all_results = []
+    
+    for t in tickers:
+        res = get_trading_signal(t)
+        all_results.append({
+            "Date": pd.Timestamp.now().strftime('%Y-%m-%d'),
+            "Ticker": t,
+            "Price": res['price'],
+            "Volatility": res['volatility'],
+            "Mom_Score": res['mom_score'],
+            "Suggested_Pos": res['suggested_pos']
+        })
+    
+    # 產出 CSV 檔
+    pd.DataFrame(all_results).to_csv("daily_status.csv", index=False)
+    print("Daily status updated successfully.")
