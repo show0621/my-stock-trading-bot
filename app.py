@@ -1,25 +1,16 @@
 import streamlit as st
-import plotly.graph_objects as go
+import streamlit.components.v1 as components
 from strategy_engine import get_trading_signal
 import pandas as pd
+import json
 
-st.set_page_config(page_title="2026 量化指揮中心", layout="wide")
+# 設定網頁標題與佈局
+st.set_page_config(page_title="2026 量化指揮中心", layout="wide", initial_sidebar_state="expanded")
 
-# 自定義 CSS 讓網頁更像專業交易終端
-st.markdown("""
-    <style>
-    .reportview-container { background: #f0f2f6; }
-    .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 2px 2px 5px rgba(0,0,0,0.1); }
-    </style>
-    """, unsafe_allow_html=True)
-
-st.title("🛡️ TEJ 波動率調節策略：智能投資顧問")
-
-# --- 側邊欄參數 ---
+# --- 1. 側邊欄：參數輸入 ---
 with st.sidebar:
     st.header("⚙️ 模擬帳戶設定")
     initial_cap = st.number_input("初始資金 (TWD)", value=200000)
-    # 增加多標的監控
     tickers = {
         "台積電 (2330)": "2330.TW",
         "鴻海 (2317)": "2317.TW",
@@ -31,73 +22,107 @@ with st.sidebar:
     ticker = tickers[selected_name]
     target_vol = st.slider("目標風險控管 (Target Vol)", 0.05, 0.25, 0.15)
 
-# --- 獲取數據 ---
+# --- 2. 核心數據運算 ---
 signal = get_trading_signal(ticker, target_vol)
-df = signal['history']
-price = signal['price']
-pos_ratio = signal['suggested_pos']
-vol = signal['volatility']
+price = round(signal['price'], 1)
+pos_ratio = round(signal['suggested_pos'] * 100, 1)
+vol = round(signal['volatility'] * 100, 2)
 mom = signal['mom_score']
 
-# --- 第一層：核心動作指令 (大字顯示) ---
-st.subheader("🚀 今日執行動作建議")
-
 # 計算建議口數 (以 20 萬資金換算)
-# 假設小期規格 100 股，但鴻海這類標的一口小期價值約 2-4 萬
+# 假設小期規格 100 股
 contract_value = price * 100 
-suggested_lots = int((initial_cap * pos_ratio) / contract_value)
+suggested_lots = int((initial_cap * (pos_ratio/100)) / contract_value) if contract_value > 0 else 0
 
-col_action, col_lots = st.columns(2)
-
-# 判斷動作邏輯
-if mom >= 1 and pos_ratio > 0.1:
+# 判定動作與顏色
+if mom >= 1 and pos_ratio > 10:
     action_text = "🟢 建議建立多單 (Long)"
-    action_color = "green"
-elif mom == 0 and pos_ratio < 0.1:
-    action_text = "🔴 建議建立空單或清倉 (Short/Flat)"
-    action_color = "red"
+    action_color = "#2a9d5c"
+elif mom == 0 and pos_ratio < 10:
+    action_text = "🔴 建議建立空單 (Short/Flat)"
+    action_color = "#d94f4f"
 else:
     action_text = "🟡 觀望與持倉調整 (Neutral)"
-    action_color = "orange"
+    action_color = "#c9a84c"
 
-col_action.markdown(f"<h2 style='color:{action_color};'>{action_text}</h2>", unsafe_allow_html=True)
-col_lots.metric("建議操作口數 (小期)", f"{suggested_lots} 口", f"曝險比 {pos_ratio:.1%}")
+# --- 3. 嵌入整合 HTML/CSS ---
+# 將 Python 數據注入 HTML
+html_content = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+TC:wght@300;400;500&display=swap');
+        *{{box-sizing:border-box;margin:0;padding:0}}
+        :root{{
+            --black:#0a0c0f;--white:#f5f4f0;
+            --gold:#c9a84c;--green:#2a9d5c;--red:#d94f4f;
+            --surface:#111317;--border:#2a2e3a;
+            --font-main:'Noto Sans TC',sans-serif;
+            --font-mono:'IBM Plex Mono',monospace;
+        }}
+        body{{background:var(--black);color:var(--white);font-family:var(--font-main);padding:20px;}}
+        .metrics-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:15px;margin-bottom:20px}}
+        .metric-card{{background:var(--surface);border:1px solid var(--border);padding:15px;border-radius:4px}}
+        .metric-label{{color:#6b7280;font-size:11px;text-transform:uppercase;margin-bottom:5px}}
+        .metric-value{{font-family:var(--font-mono);font-size:24px;font-weight:500}}
+        .action-box{{background:var(--surface);border-left:4px solid {action_color};padding:20px;margin-bottom:20px;border-radius:4px}}
+        .reason-box{{background:#181b20;padding:15px;border-radius:4px;font-size:14px;line-height:1.6;color:#d1d5db}}
+        .gold-text {{color:var(--gold)}}
+    </style>
+</head>
+<body>
+    <div class="metrics-grid">
+        <div class="metric-card">
+            <div class="metric-label">CURRENT PRICE</div>
+            <div class="metric-value">{price:,}</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">建議操作口數</div>
+            <div class="metric-value" style="color:var(--gold)">{suggested_lots} 口</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">YZ 波動率</div>
+            <div class="metric-value">{vol}%</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">建議持倉比</div>
+            <div class="metric-value" style="color:{action_color}">{pos_ratio}%</div>
+        </div>
+    </div>
 
-# --- 第二層：詳細策略說明 ---
-st.markdown("---")
-st.subheader("📑 策略深度說明與風險分析")
+    <div class="action-box">
+        <div style="font-size:12px;color:#6b7280;margin-bottom:5px">SYSTEM ACTION SIGNAL</div>
+        <div style="font-size:22px;font-weight:500;color:{action_color}">{action_text}</div>
+    </div>
 
-with st.expander("查看詳細診斷報告", expanded=True):
-    col_text, col_metrics = st.columns([2, 1])
-    
-    with col_text:
-        st.write(f"**【趨勢動能分析】**")
-        if mom == 2:
-            st.write(f"目前 {selected_name} 的 20D 與 60D 動能均為正向，這代表市場正處於強勁的上升趨勢。根據 TEJ 策略邏輯，此時應積極尋找買點。")
-        elif mom == 1:
-            st.write(f"目前動能出現分歧（短強長弱或短弱長強），屬於震盪格局。系統建議僅配置中性頭寸。")
-        else:
-            st.write(f"動能分數為 0，代表標的已跌破關鍵移動平均線，趨勢向下，系統建議避開多單，甚至考慮反手建立空單。")
-            
-        st.write(f"**【波動率調節邏輯】**")
-        st.write(f"目前的 Yang-Zhang 波動率為 {vol:.2%}。當波動率高於目標值時，系統會自動縮減口數以防止資產大幅回測；反之則放大部位。")
-        
-        # 稅費試算
-        tax_fee = (price * 100 * 0.00002) + 20
-        st.write(f"**【交易成本預估】**：單邊交易成本約 **{tax_fee:.0f} TWD**。建議在比例變動超過 10% 時再調整部位，以節省交易磨耗。")
+    <div class="reason-box">
+        <h4 style="margin-bottom:10px;color:var(--gold)">📑 策略深度說明與風險分析</h4>
+        <p>目前 <b>{selected_name}</b> 的動能分數為 <b>{mom}/2</b>。
+        {"趨勢呈現多頭排列，系統建議積極參與。" if mom == 2 else "動能出現分歧，建議採中性配置。" if mom == 1 else "趨勢偏弱，建議縮減多單持倉。"}
+        </p>
+        <p style="margin-top:10px">
+        當前的 Yang-Zhang 波動率為 {vol}%。根據您的風險控管設定（Target Vol: {target_vol:.0%}），
+        系統已將您的虛擬帳戶曝險自動調整至 {pos_ratio}%。
+        </p>
+        <p style="margin-top:10px;font-size:12px;color:#6b7280">
+        預估單邊摩擦成本（稅+費）：約 {int(price * 100 * 0.00002 + 20)} TWD。
+        </p>
+    </div>
+</body>
+</html>
+"""
 
-    with col_metrics:
-        st.metric("當前股價", f"{price:,.1f}")
-        st.metric("YZ 波動率", f"{vol:.2%}")
-        st.metric("動能分數 (0-2)", f"{mom}")
+# 渲染精美 HTML 介面
+components.html(html_content, height=500, scrolling=False)
 
-# --- 第三層：圖表標示 ---
-st.markdown("---")
-st.subheader("📈 買賣點位視覺化")
+# --- 4. 底部圖表 (使用原本的 Plotly 保持互動性) ---
+st.markdown("### 📈 買賣點位標示圖")
 fig = go.Figure()
-fig.add_trace(go.Scatter(x=df.index, y=df['Adj Close'], name="還原股價", line=dict(color="#1f77b4")))
-# 標示買入點 (簡化邏輯：動能滿分)
+fig.add_trace(go.Scatter(x=df.index, y=df['Adj Close'], name="還原股價", line=dict(color="#c9a84c")))
+# 標示買入訊號
 buy_signals = df[df['mom_score'] == 2].index
-fig.add_trace(go.Scatter(x=buy_signals, y=df.loc[buy_signals, 'Adj Close'], mode='markers', name='策略建議買入點', marker=dict(color='green', symbol='triangle-up', size=10)))
+fig.add_trace(go.Scatter(x=buy_signals, y=df.loc[buy_signals, 'Adj Close'], mode='markers', name='買入訊號', marker=dict(color='#2a9d5c', symbol='triangle-up', size=10)))
 
+fig.update_layout(template="plotly_dark", paper_bgcolor="#0a0c0f", plot_bgcolor="#0a0c0f")
 st.plotly_chart(fig, use_container_width=True)
