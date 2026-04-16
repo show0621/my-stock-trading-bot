@@ -7,44 +7,75 @@ from strategy_engine import get_trading_signal
 # 1. 初始化頁面
 st.set_page_config(page_title="2026 首席投研終端", layout="wide", initial_sidebar_state="expanded")
 
-# 2. 終極防護 CSS (免疫手機深色模式干擾，徹底解決白字與選單隱形)
+# 2. 終極防護 CSS (抗深色模式 + Base Web 破解 + RWD 狀態牆)
 css_style = """
 <style>
-    /* 強制亮色背景 */
+    /* 全局背景與字體強制鎖定 */
     .stApp, .main { background-color: #F7F3E9 !important; }
-    
-    /* 強制全域黑字，抵抗深色模式 */
     html, body, [class*="css"], p, span, div, h1, h2, h3, h4, h5, h6, label, li { 
         color: #000000 !important; 
         font-family: 'Noto Serif TC', serif; 
     }
     
-    /* 側邊欄與輸入框修復 */
+    /* 側邊欄與摺疊按鈕修復 (解決隱藏鈕看不到的問題) */
     [data-testid="stSidebar"] { background-color: #FFFFFF !important; border-right: 1px solid #D6D2C4; }
-    input, select, textarea { color: #000000 !important; background-color: #FFFFFF !important; }
+    button[kind="header"] svg, [data-testid="collapsedControl"] svg, button svg { 
+        fill: #000000 !important; color: #000000 !important; 
+    }
+
+    /* 輸入框與 Base Web 下拉選單終極修復 (解決黑底黑字問題) */
+    input, select, textarea { 
+        background-color: #FFFFFF !important; 
+        color: #000000 !important; 
+        -webkit-text-fill-color: #000000 !important; /* 破解 iOS 深色模式字體鎖定 */
+    }
+    div[data-baseweb="select"] > div { background-color: #FFFFFF !important; border-color: #D6D2C4 !important; }
+    div[data-baseweb="select"] span { color: #000000 !important; -webkit-text-fill-color: #000000 !important; }
     
-    /* 下拉選單 (Popover/Listbox) 修復：解決點開後看不到字的問題 */
-    div[data-baseweb="popover"] { z-index: 10000 !important; background-color: #FFFFFF !important; }
-    ul[role="listbox"], ul[role="listbox"] li { background-color: #FFFFFF !important; color: #000000 !important; }
+    /* 下拉彈出視窗清單 (點開後的選項) */
+    div[data-baseweb="popover"], div[data-baseweb="popover"] > div { background-color: #FFFFFF !important; }
+    ul[role="listbox"] { background-color: #FFFFFF !important; }
+    li[role="option"] { background-color: #FFFFFF !important; color: #000000 !important; }
+    li[role="option"]:hover { background-color: #F7F3E9 !important; }
     
-    /* Expander 日誌修復：解決裡面變成白字的問題 */
+    /* 日誌展開器修復 */
     [data-testid="stExpander"] { background-color: #FFFFFF !important; border: 1px solid #D6D2C4 !important; border-radius: 8px !important; }
     [data-testid="stExpanderDetails"] { background-color: #FFFFFF !important; }
-    [data-testid="stExpanderDetails"] * { color: #000000 !important; }
-    .stExpander svg { fill: #434343 !important; } /* 保留展開箭頭的深灰色 */
+    .stExpander svg { fill: #434343 !important; }
+
+    /* RWD 狀態牆設計 (解決手機端數字擠壓換行的問題) */
+    .status-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+        background: #FFFFFF;
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid #D6D2C4;
+        margin-bottom: 20px;
+    }
+    .s-title { font-size: 12px; color: #666666; text-align: center; margin-bottom: 4px; }
+    .s-val { font-size: 18px; font-weight: 600; color: #000000; text-align: center; }
+    .s-val.red { color: #9F353A; }
+    .s-val.gold { color: #B18D4D; }
+    
+    /* 當螢幕寬度小於 768px (手機版) 時，自動變成 2x2 方陣 */
+    @media (max-width: 768px) {
+        .status-grid { grid-template-columns: repeat(2, 1fr); gap: 15px; padding: 12px; }
+        .s-val { font-size: 16px; }
+    }
 </style>
 """
 st.markdown(css_style, unsafe_allow_html=True)
 
 # 3. 產業資料庫
 industry_map = {
-    "半導體核心": {"台積電 (2330)": "2330.TW", "聯發科 (2454)": "2454.TW", "日月光 (3711)": "3711.TW"},
-    "AI與伺服器": {"鴻海 (2317)": "2317.TW", "廣達 (2382)": "2382.TW", "緯穎 (6669)": "6669.TW"},
-    "傳產與其他": {"富邦金 (2881)": "2881.TW", "中信金 (2891)": "2891.TW", "信錦 (1582)": "1582.TW"},
+    "半導體核心": {"台積電 (2330)": "2330.TW", "聯發科 (2454)": "2454.TW", "日月光 (3711)": "3711.TW", "世芯 (3661)": "3661.TW"},
+    "AI與伺服器": {"鴻海 (2317)": "2317.TW", "廣達 (2382)": "2382.TW", "緯穎 (6669)": "6669.TW", "緯創 (3231)": "3231.TW"},
+    "傳產與金控": {"富邦金 (2881)": "2881.TW", "中信金 (2891)": "2891.TW", "信錦 (1582)": "1582.TW", "長榮 (2603)": "2603.TW"},
     "🔍 全台股手動輸入": "MANUAL"
 }
 
-# 4. 側邊欄設定
 with st.sidebar:
     st.title("🎐 投資指揮中心")
     cap = st.number_input("本金設定", value=200000)
@@ -58,7 +89,7 @@ with st.sidebar:
         ticker_name = st.selectbox("🎯 選擇標的", list(industry_map[selected_ind].keys()))
         ticker_symbol = industry_map[selected_ind][ticker_name]
 
-# --- 5. 執行分析引擎 ---
+# --- 4. 執行分析引擎 ---
 with st.spinner("載入量化數據中..."):
     sig = get_trading_signal(ticker_symbol, ticker_name, cap)
 
@@ -68,22 +99,22 @@ if sig is not None:
     an = sig['report']
     st_row = sig['stats']
 
-    # --- 操盤狀態牆 ---
+    # --- 5. 專業操盤狀態牆 (導入 RWD 樣式) ---
     st.markdown(f"""
-    <div style="background:#FFFFFF; padding:15px; border-radius:10px; border:1px solid #D6D2C4; display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; margin-bottom:20px;">
-        <div style="text-align:center;"><div style="font-size:12px; color:#666;">壓力 / 支撐位</div><div style="font-size:18px; font-weight:600; color:#000;">{st_row['Res']:.0f} / {st_row['Sup']:.0f}</div></div>
-        <div style="text-align:center;"><div style="font-size:12px; color:#666;">停損 / 停利點</div><div style="font-size:18px; font-weight:600; color:#9F353A;">{st_row['SL']:.1f} / {st_row['TP']:.1f}</div></div>
-        <div style="text-align:center;"><div style="font-size:12px; color:#666;">趨勢信心 / YZ年化</div><div style="font-size:18px; font-weight:600; color:#000;">{st_row['Confidence']:.2f} / {st_row['YZ_Vol']:.1%}</div></div>
-        <div style="text-align:center;"><div style="font-size:12px; color:#666;">動態配置權重</div><div style="font-size:18px; font-weight:600; color:#B18D4D;">{st_row['Weight']:.1%}</div></div>
+    <div class="status-grid">
+        <div><div class="s-title">壓力 / 支撐位</div><div class="s-val">{st_row['Res']:.0f} / {st_row['Sup']:.0f}</div></div>
+        <div><div class="s-title">停損 / 停利點</div><div class="s-val red">{st_row['SL']:.1f} / {st_row['TP']:.1f}</div></div>
+        <div><div class="s-title">趨勢信心 / YZ年化</div><div class="s-val">{st_row['Confidence']:.2f} / {st_row['YZ_Vol']:.1%}</div></div>
+        <div><div class="s-title">動態配置權重</div><div class="s-val gold">{st_row['Weight']:.1%}</div></div>
     </div>
     """, unsafe_allow_html=True)
 
-    # --- 深度投研報告 ---
+    # --- 6. 雙向新聞與深度報告 ---
     prob = an['機率']
     html_report = f"""
-    <div style="background:#FFFFFF; padding:15px; border:2px solid #B18D4D; border-radius:12px; color:#000;">
+    <div style="background:#FFFFFF; padding:20px; border:2px solid #B18D4D; border-radius:12px; color:#000;">
         <h3 style="margin-top:0; color:#9F353A; border-bottom:1px solid #E5E1D5; padding-bottom:8px;">⚖️ 首席深度投研報告：{ticker_name}</h3>
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; font-size:14px; line-height:1.6;">
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:25px; font-size:14.5px; line-height:1.7;">
             <div>
                 <b style="color:#9F353A;">【利多題材與觸及率】</b><br>{an['利多']}<br><br>
                 <b style="color:#3A5F41;">【利空風險與觸及率】</b><br>{an['利空']}<br><br>
@@ -99,8 +130,9 @@ if sig is not None:
     """
     components.html(html_report, height=450)
 
-    # --- 帳戶淨值與日誌 ---
-    unrealized_str = f" <span style='font-size:15px; color:{'#9F353A' if st_row['Unrealized_PnL'] >= 0 else '#3A5F41'};'>(含未平倉損益：{st_row['Unrealized_PnL']:+.0f} TWD)</span>" if st_row['Is_Holding'] else " <span style='font-size:15px; color:#666;'>(目前空手觀望)</span>"
+    # --- 7. 帳戶淨值與未平倉損益顯示 ---
+    unrealized_str = f" <span style='font-size:16px; color:{'#9F353A' if st_row['Unrealized_PnL'] >= 0 else '#3A5F41'};'>(包含未平倉損益：{st_row['Unrealized_PnL']:+.0f} TWD)</span>" if st_row['Is_Holding'] else " <span style='font-size:16px; color:#666;'>(目前空手觀望)</span>"
+    
     st.markdown(f"### 💰 帳戶資金變動：總淨值 {sig['equity']:,} TWD {unrealized_str}", unsafe_allow_html=True)
     
     if not ledger_df.empty:
@@ -108,7 +140,7 @@ if sig is not None:
             with st.expander(f"📅 {row['日期']} | {row['動作']} | 成交價: {row['價格']} | 結算淨值: {row['餘額']:,}"):
                 st.markdown(row['分析'])
 
-    # --- 訊號圖 (手機優化版) ---
+    # --- 8. 訊號圖 (手機防誤觸優化) ---
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name="收盤價", line=dict(color="#000", width=1.5)))
     
@@ -121,19 +153,17 @@ if sig is not None:
         if not shorts.empty:
             fig.add_trace(go.Scatter(x=pd.to_datetime(shorts['日期']), y=shorts['價格'], mode='markers', name='平倉出場', marker=dict(symbol='triangle-down', size=16, color='#3A5F41')))
             
-    # 圖表手機端優化配置
     fig.update_layout(
         template="plotly_white", 
         paper_bgcolor="#F7F3E9", 
         plot_bgcolor="#F7F3E9", 
         height=400, # 縮減高度適應手機
-        margin=dict(l=0, r=0, t=10, b=0), # 移除多餘邊距
-        dragmode='pan', # 預設改為平移，避免手機滑動時誤觸放大
-        hovermode="x unified",
+        margin=dict(l=0, r=0, t=20, b=10), # 移除多餘邊距
+        dragmode='pan', # 預設改為平移，避免手機滑動時誤觸放大變形
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
     
-    # 關閉干擾的浮動工具列 (displayModeBar: False)
+    # 關閉干擾的浮動工具列
     st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False, 'scrollZoom': False})
 
 else:
