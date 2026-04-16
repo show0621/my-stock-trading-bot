@@ -3,7 +3,7 @@ import streamlit.components.v1 as components
 from strategy_engine import get_trading_signal
 import pandas as pd
 import json
-
+import plotly.graph_objects as go
 # 設定網頁標題與佈局
 st.set_page_config(page_title="2026 量化指揮中心", layout="wide", initial_sidebar_state="expanded")
 
