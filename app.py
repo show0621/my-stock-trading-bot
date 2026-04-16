@@ -6,7 +6,7 @@ from strategy_engine import get_trading_signal
 # 1. 頁面初始化
 st.set_page_config(page_title="李孟霖 | 首席投研終端", layout="wide", initial_sidebar_state="expanded")
 
-# 2. 終極防護 CSS (加入報告的響應式 RWD 設計)
+# 2. 終極防護 CSS
 css_style = """
 <style>
     :root { color-scheme: light !important; }
@@ -37,7 +37,6 @@ css_style = """
     .s-title { font-size: 12px; color: #666666; text-align: center; margin-bottom: 4px; }
     .s-val { font-size: 18px; font-weight: 600; color: #000000; text-align: center; }
     
-    /* 報告專屬排版 CSS */
     .report-header {
         display: flex; justify-content: space-between; align-items: flex-start;
         border-bottom: 1px solid #E5E1D5; padding-bottom: 10px; margin-bottom: 15px;
@@ -46,7 +45,6 @@ css_style = """
         display: grid; grid-template-columns: 1fr 1fr; gap: 25px; font-size: 14.5px; line-height: 1.7;
     }
 
-    /* 手機版適配 */
     @media (max-width: 768px) {
         .status-grid { grid-template-columns: repeat(2, 1fr); gap: 15px; }
         .report-header { flex-direction: column; gap: 8px; }
@@ -94,9 +92,5 @@ with st.spinner("載入量化數據中..."):
 if sig:
     df, ledger_df, an, st_row = sig['history'], pd.DataFrame(sig['ledger']), sig['report'], sig['stats']
 
-    # --- 5. 狀態牆 ---
-    st.markdown(f"""
-    <div class="status-grid">
-        <div><div class="s-title">壓力 / 支撐位</div><div class="s-val">{st_row['Res']:.0f} / {st_row['Sup']:.0f}</div></div>
-        <div><div class="s-title">停損 / 停利點</div><div class="s-val" style="color:#9F353A;">{st_row['SL']:.1f} / {st_row['TP']:.1f}</div></div>
-        <div><div class="s-title">趨勢信心 / YZ年化</div><div class="s-val">{st_
+    # --- 防呆處理：先將數字轉為字串變數，避免 HTML 內部長字串被編輯器截斷 ---
+    val_res = f"{st_row['Res']:.0
