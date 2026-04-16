@@ -1,0 +1,34 @@
+name: Daily Strategy Update
+
+on:
+  schedule:
+    - cron: '30 7 * * 1-5' # 這是國際標準時間 (UTC)，等於台北時間週一至週五 15:30
+  workflow_dispatch: # 允許你手動點擊執行測試
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run analysis script
+        run: |
+          python strategy_engine.py --update_csv # 執行腳本並產出 csv
+
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add daily_status.csv
+          git commit -m "Auto-update daily status [skip ci]" || exit 0
+          git push
