@@ -7,68 +7,48 @@ from strategy_engine import get_trading_signal
 # 1. 初始化頁面
 st.set_page_config(page_title="2026 首席投研終端", layout="wide", initial_sidebar_state="expanded")
 
-# 2. 終極防護 CSS (抗深色模式 + Base Web 破解 + RWD 狀態牆)
+# 2. 終極防護 CSS (維持 V19 完美抗深色模式與排版，不變動)
 css_style = """
 <style>
-    /* 1. 終極銀彈：強制瀏覽器認知本網頁為亮色模式，阻擋 iOS 深色模式原生覆蓋 */
     :root { color-scheme: light !important; }
-
-    /* 2. 全局背景與字體強制鎖定 */
     .stApp, .main { background-color: #F7F3E9 !important; }
     html, body, [class*="css"], p, span, div, h1, h2, h3, h4, h5, h6, label, li { 
-        color: #000000 !important; 
-        font-family: 'Noto Serif TC', serif; 
+        color: #000000 !important; font-family: 'Noto Serif TC', serif; 
     }
     
-    /* 3. 頂部標題列與側邊欄隱藏鈕 (解決左上角 >> 按鈕黑底問題) */
     header[data-testid="stHeader"] { background-color: transparent !important; }
     [data-testid="collapsedControl"] { 
-        background-color: #FFFFFF !important; 
-        border-radius: 50% !important; /* 變成漂亮的圓形按鈕 */
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1) !important;
+        background-color: #FFFFFF !important; border-radius: 50% !important; box-shadow: 0 2px 5px rgba(0,0,0,0.1) !important;
     }
     [data-testid="collapsedControl"] svg { fill: #000000 !important; }
-    
-    /* 4. 側邊欄內部背景 */
     [data-testid="stSidebar"] { background-color: #FFFFFF !important; border-right: 1px solid #D6D2C4; }
 
-    /* 5. 輸入框與按鈕 (解決本金設定 - + 按鈕黑底問題) */
     input, select, textarea { 
-        background-color: #FFFFFF !important; 
-        color: #000000 !important; 
-        -webkit-text-fill-color: #000000 !important; 
+        background-color: #FFFFFF !important; color: #000000 !important; -webkit-text-fill-color: #000000 !important; 
     }
-    /* 強制將數字加減按鈕變成白底黑字 */
-    button[data-testid="stNumberInputStepDown"], 
-    button[data-testid="stNumberInputStepUp"] {
-        background-color: #F7F3E9 !important; 
-        color: #000000 !important;
+    button[data-testid="stNumberInputStepDown"], button[data-testid="stNumberInputStepUp"] {
+        background-color: #F7F3E9 !important; color: #000000 !important;
     }
-    button[data-testid="stNumberInputStepDown"] svg, 
-    button[data-testid="stNumberInputStepUp"] svg {
+    button[data-testid="stNumberInputStepDown"] svg, button[data-testid="stNumberInputStepUp"] svg {
         fill: #000000 !important;
     }
     
-    /* 6. Base Web 下拉選單終極修復 */
     div[data-baseweb="select"] > div { background-color: #FFFFFF !important; border-color: #D6D2C4 !important; }
     div[data-baseweb="select"] span { color: #000000 !important; -webkit-text-fill-color: #000000 !important; }
-    div[data-baseweb="select"] svg { fill: #000000 !important; } /* 讓下拉的小箭頭變黑 */
+    div[data-baseweb="select"] svg { fill: #000000 !important; }
     
     div[data-baseweb="popover"], div[data-baseweb="popover"] > div { background-color: #FFFFFF !important; }
     ul[role="listbox"] { background-color: #FFFFFF !important; }
     li[role="option"] { background-color: #FFFFFF !important; color: #000000 !important; }
     li[role="option"]:hover { background-color: #F7F3E9 !important; }
     
-    /* 7. 日誌展開器修復 */
     [data-testid="stExpander"] { background-color: #FFFFFF !important; border: 1px solid #D6D2C4 !important; border-radius: 8px !important; }
     [data-testid="stExpanderDetails"] { background-color: #FFFFFF !important; }
     .stExpander svg { fill: #434343 !important; }
 
-    /* 8. RWD 狀態牆設計 (解決手機端數字擠壓換行的問題) */
     .status-grid {
         display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
-        background: #FFFFFF; padding: 15px; border-radius: 10px;
-        border: 1px solid #D6D2C4; margin-bottom: 20px;
+        background: #FFFFFF; padding: 15px; border-radius: 10px; border: 1px solid #D6D2C4; margin-bottom: 20px;
     }
     .s-title { font-size: 12px; color: #666666; text-align: center; margin-bottom: 4px; }
     .s-val { font-size: 18px; font-weight: 600; color: #000000; text-align: center; }
@@ -147,15 +127,35 @@ if sig is not None:
 
     # --- 7. 帳戶淨值與未平倉損益顯示 ---
     unrealized_str = f" <span style='font-size:16px; color:{'#9F353A' if st_row['Unrealized_PnL'] >= 0 else '#3A5F41'};'>(包含未平倉損益：{st_row['Unrealized_PnL']:+.0f} TWD)</span>" if st_row['Is_Holding'] else " <span style='font-size:16px; color:#666;'>(目前空手觀望)</span>"
-    
     st.markdown(f"### 💰 帳戶資金變動：總淨值 {sig['equity']:,} TWD {unrealized_str}", unsafe_allow_html=True)
     
+    # --- 【新增區塊】CSV下載與分頁邏輯 ---
     if not ledger_df.empty:
-        for _, row in ledger_df.head(10).iterrows():
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            # 產生 CSV 並轉碼為 utf-8-sig 以支援 Excel 繁體中文
+            csv_data = ledger_df.to_csv(index=False).encode('utf-8-sig')
+            st.download_button(
+                label="📥 下載完整歷史交易紀錄 (CSV)", 
+                data=csv_data, 
+                file_name=f"{ticker_name}_歷史交易帳本.csv", 
+                mime="text/csv"
+            )
+        with col2:
+            # 分頁控制器 (每頁 10 筆)
+            items_per_page = 10
+            total_pages = max(1, (len(ledger_df) - 1) // items_per_page + 1)
+            page_num = st.number_input(f"📄 選擇頁碼 (共 {total_pages} 頁)", min_value=1, max_value=total_pages, value=1)
+            
+        start_idx = (page_num - 1) * items_per_page
+        end_idx = start_idx + items_per_page
+        
+        # 依照分頁渲染日誌
+        for _, row in ledger_df.iloc[start_idx:end_idx].iterrows():
             with st.expander(f"📅 {row['日期']} | {row['動作']} | 成交價: {row['價格']} | 結算淨值: {row['餘額']:,}"):
                 st.markdown(row['分析'])
 
-    # --- 8. 訊號圖 (手機防誤觸優化) ---
+    # --- 8. 訊號圖 (維持原樣) ---
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name="收盤價", line=dict(color="#000", width=1.5)))
     
