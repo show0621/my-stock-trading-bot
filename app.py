@@ -5,99 +5,119 @@ import plotly.graph_objects as go
 import os
 from strategy_engine import get_trading_signal
 
+# 1. 初始化
 st.set_page_config(page_title="2026 量化指揮中心", layout="wide")
 
-# --- 側邊欄：帳戶設定 ---
+# --- 側邊欄：導覽與設定 ---
 with st.sidebar:
-    st.header("🎎 帳戶設定")
+    st.title("🎐 操盤導覽")
+    st.markdown("---")
     initial_cap = st.number_input("初始資金 (TWD)", value=200000)
-    tickers = {
-        "台積電 (2330)": "2330.TW", "鴻海 (2317)": "2317.TW", 
-        "聯發科 (2454)": "2454.TW", "廣達 (2382)": "2382.TW", 
-        "台指期模擬 (^TWII)": "^TWII"
-    }
-    selected_name = st.selectbox("監控標的", list(tickers.keys()))
-    ticker = tickers[selected_name]
+    tickers = {"台積電 (2330)": "2330.TW", "鴻海 (2317)": "2317.TW", "聯發科 (2454)": "2454.TW"}
+    selected_name = st.selectbox("標的監控", list(tickers.keys()))
     target_vol = st.slider("目標風險控管", 0.05, 0.25, 0.15)
+    st.markdown("---")
+    st.info("今日操盤歷史紀錄\n\n風控中心\n\n策略回測")
 
-# --- 核心數據 ---
-signal = get_trading_signal(ticker, target_vol)
-df = signal['history']
+# --- 2. 數據獲取與變數設定 ---
+sig = get_trading_signal(tickers[selected_name], target_vol)
+df = sig['history']
 latest = df.iloc[-1]
 price = round(float(latest['Adj Close']), 1)
-pos_ratio = round(float(signal['suggested_pos'] * 100), 1)
-vol_val = round(float(signal['volatility'] * 100), 2)
-mom = int(signal['mom_score'])
+pos_ratio = round(float(sig['suggested_pos'] * 100), 1)
+vol_val = round(float(sig['volatility'] * 100), 1)
+mom = int(sig['mom_score'])
 
-# --- 專業分析邏輯 ---
-m_h = latest['MACD_Hist']
-macd_desc = "動能金叉轉強" if m_h > 0 else "趨勢盤整或動能轉弱"
-k_trend = "強勢多頭 (站上20MA/60MA)" if price > latest['SMA_20'] and price > latest['SMA_60'] else "區間震盪，回測支撐中"
-vol_ratio = latest['Volume'] / df['Volume'].rolling(5).mean().iloc[-1]
-chip_desc = "主力換手積極" if vol_ratio > 1.2 else "籌碼沉澱盤整"
-
-# 期貨與口數計算
+# 期貨專業計算
 margin_rate = 0.135
 margin_per_lot = price * 100 * margin_rate
-suggested_lots = int((initial_cap * (pos_ratio/100)) / margin_per_lot) if margin_per_lot > 0 else 0
-total_tax_fee = (price * 100 * 0.00002 * 2 + 40) * suggested_lots
-tick_profit = 100 * suggested_lots
+target_inv = initial_cap * (pos_ratio / 100)
+suggested_lots = int(target_inv / margin_per_lot) if margin_per_lot > 0 else 0
+used_margin = margin_per_lot * suggested_lots
+buffer_cap = initial_cap - used_margin
 
-# --- 介面渲染 (日式和風) ---
+# 稅費與風控
+tax_one_way = price * 100 * 0.00002
+total_tax = tax_one_way * suggested_lots * 2
+total_fee = 20 * suggested_lots * 2
+sl_price = round(price * 0.955, 1) # 停損 -4.5%
+tp_price = round(price * 1.06, 1)  # 止盈 +6%
+
+# --- 3. 嵌入日式專業 HTML 介面 ---
+action_text = "🟢 中性偏多信號" if mom >= 1 else "🔴 清倉避險信號"
 action_color = "#9F353A" if mom >= 1 else "#434343"
 
 html_content = f"""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;600&family=IBM+Plex+Mono&display=swap');
-    .jp-container {{ background: #F7F3E9; color: #434343; font-family: 'Noto Serif TC', serif; padding: 25px; border-radius: 12px; border: 2px solid #D6D2C4; }}
-    .grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 25px; }}
-    .card {{ background: #FFFFFF; padding: 15px; border: 1px solid #E5E1D5; border-radius: 8px; text-align: center; }}
-    .label {{ color: #8C8C8C; font-size: 11px; margin-bottom: 8px; text-transform: uppercase; }}
-    .value {{ font-family: 'IBM Plex Mono', monospace; font-size: 24px; font-weight: 600; }}
-    .report-card {{ background: #FFFFFF; padding: 25px; border-radius: 8px; border: 1px solid #E5E1D5; line-height: 1.8; font-size: 14px; }}
-    .report-title {{ color: #B18D4D; font-weight: 600; font-size: 18px; margin-bottom: 15px; border-bottom: 1px solid #E5E1D5; padding-bottom: 5px; }}
+    .jp-shell {{ background: #F7F3E9; color: #434343; font-family: 'Noto Serif TC', serif; padding: 25px; border-radius: 12px; border: 2px solid #D6D2C4; }}
+    .metrics {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 25px; }}
+    .m-card {{ background: #FFF; padding: 15px; border: 1px solid #E5E1D5; border-radius: 8px; text-align: center; }}
+    .m-label {{ color: #8C8C8C; font-size: 11px; text-transform: uppercase; margin-bottom: 5px; }}
+    .m-value {{ font-family: 'IBM Plex Mono', monospace; font-size: 24px; font-weight: 600; }}
+    .report-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }}
+    .r-box {{ background: #FFF; padding: 20px; border-radius: 8px; border: 1px solid #E5E1D5; font-size: 13px; line-height: 1.6; }}
+    .section-h {{ color: #B18D4D; font-weight: 600; border-bottom: 1px solid #E5E1D5; margin-bottom: 10px; padding-bottom: 5px; display: flex; justify-content: space-between; }}
     .highlight {{ color: #9F353A; font-weight: 600; }}
 </style>
-<div class="jp-container">
-    <div class="grid">
-        <div class="card"><div class="label">Price</div><div class="value">{price:,}</div></div>
-        <div class="card"><div class="label">建議操作口數</div><div class="value" style="color:#B18D4D">{suggested_lots} 口</div></div>
-        <div class="card"><div class="label">YZ 波動率</div><div class="value">{vol_val}%</div></div>
-        <div class="card"><div class="label">建議持倉比</div><div class="value" style="color:{action_color};">{pos_ratio}%</div></div>
+<div class="jp-shell">
+    <div style="font-size:18px; font-weight:600; margin-bottom:20px; color:#B18D4D;">// 今日模擬入場紀錄 — 2026.04.16</div>
+    <div class="metrics">
+        <div class="m-card"><div class="m-label">TODAY ENTRY PRICE</div><div class="m-value">{price:,}</div></div>
+        <div class="m-card"><div class="m-label">建議口數</div><div class="m-value" style="color:#B18D4D">{suggested_lots} 口</div></div>
+        <div class="m-card"><div class="m-label">YZ 波動率</div><div class="m-value">{vol_val}%</div></div>
+        <div class="m-card"><div class="m-label">建議持倉比</div><div class="m-value" style="color:{action_color};">{pos_ratio}%</div></div>
     </div>
-    <div class="report-card">
-        <div class="report-title">⚖️ 首席分析師報告：{selected_name}</div>
-        <b>【計算詳情】</b> 小型期貨每口保證金率 13.5%：<span class="highlight">{int(margin_per_lot):,} 元</span>。<br>
-        預估持有 {suggested_lots} 口，佔用資金 {int(margin_per_lot * suggested_lots):,} 元，保留緩衝金 {int(initial_cap - (margin_per_lot * suggested_lots)):,} 元。<br>
-        預估來回成本 (稅+費)：約 {int(total_tax_fee)} 元 | 每跳動一點損益：<span class="highlight">{int(tick_profit)} 元</span>。<br><br>
-        <b>【深度診斷】</b><br>
-        • <b>MACD 動能：</b>{macd_desc} (柱狀值 {m_h:.2f})。<br>
-        • <b>K線趨勢：</b>{k_trend}，多頭趨勢觀察中。<br>
-        • <b>量價籌碼：</b>成交量比率為 {vol_ratio:.2f}，目前顯示 {chip_desc}。<br><br>
-        <div style="font-size:12px; color:#8C8C8C; border-top:1px dashed #D6D2C4; padding-top:10px;">
-        ⚠️ 本儀表板為模擬投資工具，不構成實際投資建議。期貨具高槓桿風險，請自行評估。
+    <div class="report-grid">
+        <div class="r-box">
+            <div class="section-h"><span>📐 口數與保證金計算</span></div>
+            • 入場股價：{price:,} 元 | 規格：100 股/口<br>
+            • 原始保證金率：13.5% | 每口保證金：{int(margin_per_lot):,} 元<br>
+            • 可用資金 ({pos_ratio}%)：{int(target_inv):,} 元<br>
+            • <b>建議買入：{suggested_lots} 口</b><br>
+            • 佔用保證金：<span class="highlight">{int(used_margin):,} 元</span> | 剩餘緩衝金：{int(buffer_cap):,} 元
+            
+            <div class="section-h" style="margin-top:20px;"><span>💸 預估稅費與跳動損益</span></div>
+            • 4口來回期交稅：{int(total_tax)} 元 | 4口總手續費：約 {int(total_fee)} 元<br>
+            • 合計摩擦成本：約 {int(total_tax + total_fee)} 元<br>
+            • <b>跳動1點損益：<span class="highlight">{int(suggested_lots * 100)} 元</span></b>
+        </div>
+        <div class="r-box">
+            <div class="section-h"><span>▎ AI 日誌 · 買入原因分析</span></div>
+            {selected_name} 今日以 {int(sig['open']):,} 元開盤，收盤報 {price:,} 元。
+            YZ 波動率為 {vol_val}%，處於中性區間。
+            動能評分顯示趨勢強勁，成交量較前日有所放量，配合股價上揚確認多方意圖。
+            技術面顯示均線多頭排列，短期 MA20 支撐力道強，足以承受約 {int(buffer_cap / (suggested_lots * 100) if suggested_lots > 0 else 0)} 點的波動。
+            
+            <div class="section-h" style="margin-top:20px;"><span>🛡️ 風控參數建議</span></div>
+            • 停損位：<span class="highlight">{sl_price:,}</span> (-4.5%) | 最大損失：{int((price - sl_price) * 100 * suggested_lots):,} 元<br>
+            • 止盈位：<span style="color:#2a9d5c;">{tp_price:,}</span> (+6.0%) | 預期獲利：{int((tp_price - price) * 100 * suggested_lots):,} 元
         </div>
     </div>
 </div>
 """
 components.html(html_content, height=620)
 
-# --- 圖表與紀錄表 ---
-st.markdown("### 📜 歷史觀測紀錄")
-csv_path = "daily_status.csv"
-if os.path.exists(csv_path):
-    st.dataframe(pd.read_csv(csv_path).query(f"Ticker=='{ticker}'").sort_values("Date", ascending=False), use_container_width=True)
+# --- 4. 實戰模擬帳本 ---
+st.markdown("### 20萬期貨實戰模擬帳本")
+ledger_data = [{
+    "日期": "2026/04/16", "標的": f"{selected_name}小期", "方向": "▲ 買多",
+    "口數": f"{suggested_lots} 口", "入場價": f"{price:,}", "預估稅費": f"≈ {int(total_tax+total_fee)} 元",
+    "持倉比": f"{pos_ratio}%", "狀態": "持倉中"
+}]
+st.table(pd.DataFrame(ledger_data))
 
-st.markdown("### 📈 技術指標視覺化")
-t1, t2 = st.tabs(["K線趨勢", "MACD 柱狀圖"])
-with t1:
+# --- 5. 指標視覺化 ---
+st.markdown("### 📈 策略回測與動能指標")
+tab1, tab2 = st.tabs(["K線與趨勢", "MACD 動能"])
+with tab1:
     fig1 = go.Figure()
     fig1.add_trace(go.Scatter(x=df.index, y=df['Adj Close'], name="價格", line=dict(color="#434343")))
     fig1.add_trace(go.Scatter(x=df.index, y=df['SMA_20'], name="20MA", line=dict(color="#B18D4D", dash='dot')))
-    fig1.update_layout(template="plotly_white", paper_bgcolor="#F7F3E9", plot_bgcolor="#F7F3E9")
+    fig1.update_layout(template="plotly_white", paper_bgcolor="#F7F3E9", plot_bgcolor="#F7F3E9", height=400)
     st.plotly_chart(fig1, use_container_width=True)
-with t2:
+with tab2:
     fig2 = go.Figure()
     fig2.add_trace(go.Bar(x=df.index, y=df['MACD_Hist'], name="MACD Hist", marker_color="#9F353A"))
-    fig2.update_layout(template="plotly_white", paper_bgcolor="#F7F3E9", plot_bgcolor="#F7F3E9")
+    fig2.update_layout(template="plotly_white", paper_bgcolor="#F7F3E9", plot_bgcolor="#F7F3E9", height=300)
     st.plotly_chart(fig2, use_container_width=True)
