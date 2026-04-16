@@ -7,11 +7,14 @@ from strategy_engine import get_trading_signal
 # 1. 頁面初始化
 st.set_page_config(page_title="2026 首席投研終端", layout="wide", initial_sidebar_state="expanded")
 
-# 2. 精確防亂碼 CSS 
+# 2. 精確防亂碼 CSS
 css_code = """
 <style>
     .stApp { background-color: #F7F3E9; }
-    .stMarkdown div p, .stMarkdown div li, h1, h2, h3, label { color: #000000 !important; font-family: 'Noto Serif TC', serif; }
+    .stMarkdown div p, .stMarkdown div li, h1, h2, h3, label {
+        color: #000000 !important;
+        font-family: 'Noto Serif TC', serif;
+    }
     .stExpander svg { fill: #434343 !important; }
     [data-testid="stSidebar"] { background-color: #FFFFFF !important; border-right: 1px solid #D6D2C4; }
     [data-testid="stSidebar"] * { color: #000000 !important; }
@@ -32,7 +35,7 @@ industry_map = {
 with st.sidebar:
     st.title("🎐 投資指揮中心")
     cap = st.number_input("本金設定", value=200000)
-    selected_ind = st.radio("📁 產業類別 (解決選單滑動問題)", list(industry_map.keys()))
+    selected_ind = st.radio("📁 產業類別", list(industry_map.keys()))
     
     if selected_ind == "🔍 全台股手動輸入":
         code = st.text_input("輸入代號 (如: 2303)", value="2303")
@@ -83,27 +86,28 @@ if sig is not None:
     """
     components.html(html_report, height=450)
 
-    # --- 7. 帳本與詳細日誌 (修復說明過於簡單的問題) ---
-    st.markdown(f"### 💰 帳戶資金變動：累積淨值 {sig['equity']:,} TWD")
+    # --- 7. 帳戶淨值與未平倉損益顯示 ---
+    unrealized_str = f" <span style='font-size:16px; color:{'#9F353A' if st_row['Unrealized_PnL'] >= 0 else '#3A5F41'};'>(包含未平倉損益：{st_row['Unrealized_PnL']:+.0f} TWD)</span>" if st_row['Is_Holding'] else " <span style='font-size:16px; color:#666;'>(目前空手觀望)</span>"
+    
+    st.markdown(f"### 💰 帳戶資金變動：總淨值 {sig['equity']:,} TWD {unrealized_str}", unsafe_allow_html=True)
+    
     if not ledger_df.empty:
         for _, row in ledger_df.head(10).iterrows():
-            with st.expander(f"📅 {row['日期']} | {row['動作']} | 價格: {row['價格']} | 餘額: {row['餘額']:,}"):
-                # 使用 markdown 讓 \n 換行與粗體生效
+            with st.expander(f"📅 {row['日期']} | {row['動作']} | 成交價: {row['價格']} | 結算淨值: {row['餘額']:,}"):
                 st.markdown(row['分析'])
 
-    # --- 8. 訊號點位追蹤 (修復三角形不見的問題) ---
+    # --- 8. 訊號圖 ---
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name="價格", line=dict(color="#000", width=1.5)))
     
     if not ledger_df.empty:
-        # 修正這裡：精確比對「買進建倉」與「平倉保護」的字串
         longs = ledger_df[ledger_df['動作'].str.contains("買進建倉")]
         if not longs.empty:
             fig.add_trace(go.Scatter(x=pd.to_datetime(longs['日期']), y=longs['價格'], mode='markers', name='波段進場', marker=dict(symbol='triangle-up', size=16, color='#9F353A')))
             
         shorts = ledger_df[ledger_df['動作'].str.contains("平倉保護")]
         if not shorts.empty:
-            fig.add_trace(go.Scatter(x=pd.to_datetime(shorts['日期']), y=shorts['價格'], mode='markers', name='平倉觀望', marker=dict(symbol='triangle-down', size=16, color='#3A5F41')))
+            fig.add_trace(go.Scatter(x=pd.to_datetime(shorts['日期']), y=shorts['價格'], mode='markers', name='平倉出場', marker=dict(symbol='triangle-down', size=16, color='#3A5F41')))
             
     fig.update_layout(template="plotly_white", paper_bgcolor="#F7F3E9", plot_bgcolor="#F7F3E9", height=500, margin=dict(l=10, r=10, t=30, b=10))
     st.plotly_chart(fig, use_container_width=True)
