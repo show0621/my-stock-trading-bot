@@ -1,80 +1,95 @@
-import yfinance as yf
+import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
-import numpy as np
+import plotly.graph_objects as go
+from strategy_engine import get_trading_signal
 
-def get_expert_report(ticker_name, ticker_symbol):
-    """資深首席分析師 - 2026.04 深度利基與未來展望"""
-    # 根據代碼與名稱對齊 2026 最新情資
-    if "2330" in ticker_symbol or "半導體" in ticker_name:
-        return {
-            "核心利基": "2奈米 A16 製程於今日(4/16)法說確認良率超前。CoWoS 封裝市佔率達 92%，具備極強定價權。",
-            "未來展望": "邊緣 AI 手機放量將帶動 2026 Q4 營收噴發。預計全年 EPS 挑戰新高，資本支出效益將在 2027 全面顯現。",
-            "產業動態": "今日法說公告毛利率展望上調至 56%。外資、投信法人認同度極高，籌碼集中度創一年新高。",
-            "機率預測": {"看多": 75, "分布": "強勢多頭偏態分布"}
-        }
-    elif any(x in ticker_name for x in ["鴻海", "廣達", "伺服器", "2317", "2382"]):
-        return {
-            "核心利基": "GB200/GB300 伺服器垂直整合能力全球第一。具備 DLC 液冷散熱系統一條龍生產能力。",
-            "未來展望": "AI 伺服器營收將於 2026 下半年佔比衝破 60%。EV 電動車代工業務將於 2027 成為新獲利引擎。",
-            "產業動態": "美系 CSP 客戶追加液冷櫃訂單。4 月營收預期創同期新高，本益比具備向上重新評價空間。",
-            "機率預測": {"看多": 68, "分布": "趨勢延伸型分布"}
-        }
-    else:
-        return {
-            "核心利基": "具備穩定的現金流與產業龍頭地位。殖利率表現優於大盤平均，為避險與長線資金首選標的。",
-            "未來展望": "受惠全球供應鏈重組與內需消費復甦。財務結構穩健，負債比持續下降，具備高防禦屬性。",
-            "產業動態": "目前籌碼呈現區間換手，外資持股水位穩定。企業配息政策優化，未來展望中性偏多。",
-            "機率預測": {"看多": 55, "分布": "常態穩定分布"}
-        }
+# 1. 配置
+st.set_page_config(page_title="2026 量化決策室", layout="wide", initial_sidebar_state="expanded")
 
-def get_trading_signal(ticker, ticker_name, initial_cap=200000):
-    df = yf.download(ticker, period="1y", progress=False)
-    if df.empty: return None
-    if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
-    
-    # 1. 動能與技術指標
-    df['SMA5'], df['SMA20'] = df['Close'].rolling(5).mean(), df['Close'].rolling(20).mean()
-    ema12, ema26 = df['Close'].ewm(span=12, adjust=False).mean(), df['Close'].ewm(span=26, adjust=False).mean()
-    df['MACD'] = ema12 - ema26
-    df['MACD_Hist'] = df['MACD'] - df['MACD'].ewm(span=9, adjust=False).mean()
-    # 動能斜率：計算 MACD 柱狀體的變化速度
-    df['Momentum_Slope'] = df['MACD_Hist'].diff()
-    
-    u, d = df['Close'].diff().where(df['Close'].diff()>0, 0).rolling(14).mean(), -df['Close'].diff().where(df['Close'].diff()<0, 0).rolling(14).mean()
-    df['RSI'] = 100 - (100 / (1 + u/d))
-
-    # 2. K線形態訓練偵測
-    df['Pattern'] = "無明顯形態"
-    # 多方吞噬 (Bullish Engulfing)
-    df.loc[(df['Close'] > df['Open']) & (df['Close'].shift(1) < df['Open'].shift(1)) & (df['Close'] > df['Open'].shift(1)) & (df['Open'] < df['Close'].shift(1)), 'Pattern'] = "★ 多方吞噬 (反轉)"
-    # 三角收斂 (Triangle)
-    range_10 = df['High'].rolling(10).max() - df['Low'].rolling(10).min()
-    df.loc[range_10 < range_10.shift(5), 'Pattern'] = "▲ 三角收斂 (盤整)"
-    
-    # 3. 雙向回測與損益
-    balance, in_pos, buy_price, entry_idx, pos_type = initial_cap, False, 0, 0, ""
-    trades = []
-
-    for i in range(30, len(df)):
-        row, date_str = df.iloc[i], df.index[i].strftime('%Y/%m/%d')
-        mom_status = "動能加速" if row['Momentum_Slope'] > 0 else "動能衰退"
-
-        if not in_pos:
-            if row['Close'] > row['SMA20'] and row['MACD_Hist'] > 0:
-                in_pos, buy_price, entry_idx, pos_type = True, row['Close'], i, "Long"
-                trades.append({"日期": date_str, "動作": "▲ 做多", "價格": round(buy_price, 1), "餘額": int(balance), "分析": f"【形態偵測】{row['Pattern']}。 \n【動能分析】{mom_status}，MACD 柱狀體斜率向上，確認買盤集結力道強勁。"})
-            elif row['Close'] < row['SMA20'] and row['MACD_Hist'] < 0:
-                in_pos, buy_price, entry_idx, pos_type = True, row['Close'], i, "Short"
-                trades.append({"日期": date_str, "動作": "▼ 放空", "價格": round(buy_price, 1), "餘額": int(balance), "分析": f"【趨勢判讀】跌破月線轉弱，{mom_status}顯示賣壓擴張。形態偏空。"})
-        elif in_pos:
-            days, p_pct = i - entry_idx, (row['Close'] - buy_price)/buy_price if pos_type == "Long" else (buy_price - row['Close'])/buy_price
-            if p_pct >= 0.06 or p_pct <= -0.03 or days >= 7:
-                pnl = p_pct * initial_cap * 2
-                balance += pnl
-                trades.append({"日期": date_str, "動作": "◆ 平倉", "價格": round(row['Close'], 1), "餘額": int(balance), "分析": f"週期結算：{int(pnl):+} 元。累計餘額：{int(balance):,}。目前動能呈現{mom_status}。"})
-                in_pos = False
-
-    return {
-        "history": df, "ledger": trades[::-1], "equity": int(balance), 
-        "report": get_expert_report(ticker_name, ticker), "rsi": df.iloc[-1]['RSI'], "mom": df.iloc[-1]['Momentum_Slope']
+# 2. 精確 CSS：解決亂碼與黑字問題
+st.markdown("""
+<style>
+    .stApp { background-color: #F7F3E9; }
+    /* 只黑化內容文字，保留系統 Icon */
+    .stMarkdown div p, .stMarkdown div li, h1, h2, h3, .stMetric div, .stExpander p { 
+        color: #000000 !important; 
+        font-family: 'Noto Serif TC', serif; 
     }
+    
+    /* 側邊欄黑字且確保可滑動 */
+    [data-testid="stSidebar"] { background-color: #FFFFFF !important; border-right: 1px solid #D6D2C4; }
+    [data-testid="stSidebar"] * { color: #000000 !important; }
+    
+    .stExpander { border: 1px solid #D6D2C4 !important; background-color: #FFFFFF !important; border-radius: 8px !important; }
+</style>
+""", unsafe_allow_html=True)
+
+# 3. 產業資料庫
+industry_groups = {
+    "半導體核心": {"台積電 (2330)": "2330.TW", "聯發科 (2454)": "2454.TW", "日月光投控 (3711)": "3711.TW", "聯電 (2303)": "2303.TW"},
+    "AI與伺服器": {"鴻海 (2317)": "2317.TW", "廣達 (2382)": "2382.TW", "緯穎 (6669)": "6669.TW", "技嘉 (2376)": "2376.TW"},
+    "金融金控": {"富邦金 (2881)": "2881.TW", "國泰金 (2882)": "2882.TW", "中信金 (2891)": "2891.TW", "兆豐金 (2886)": "2886.TW"},
+    "🔍 全台股手動輸入": "MANUAL"
+}
+
+with st.sidebar:
+    st.title("🎐 投資指揮中心")
+    cap = st.number_input("本金設定", value=200000)
+    selected_ind = st.radio("📁 產業類別選擇", list(industry_groups.keys()))
+    
+    if selected_ind == "🔍 全台股手動輸入":
+        code = st.text_input("輸入台股代碼 (如: 2330)", value="2330")
+        ticker_symbol = f"{code}.TW"
+        ticker_name = f"自選標的 ({code})"
+    else:
+        ticker_name = st.selectbox("🎯 選擇標的公司", list(industry_groups[selected_ind].keys()))
+        ticker_symbol = industry_groups[selected_ind][ticker_name]
+
+# --- 4. 數據獲取與分析 ---
+sig = get_trading_signal(ticker_symbol, ticker_name, cap)
+df, ledger_df = sig['history'], pd.DataFrame(sig['ledger'])
+an = sig['report']
+
+# --- 5. 首席深度投研報告 (詳細展望與利基) ---
+html_report = f"""
+<div style="background:#FFFFFF; padding:20px; border:2px solid #B18D4D; border-radius:12px; color:#000;">
+    <h3 style="margin-top:0; color:#9F353A; border-bottom:1px solid #E5E1D5; padding-bottom:10px;">⚖️ 首席分析師深度報告：{ticker_name}</h3>
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:25px; font-size:14.5px; line-height:1.7;">
+        <div>
+            <b>【核心利基點 (Niches)】</b><br>{an['核心利基']}<br><br>
+            <b>【未來展望 (Outlook)】</b><br>{an['未來展望']}
+        </div>
+        <div>
+            <b>【最新產業動態/新聞】</b><br>{an['產業動態']}<br><br>
+            <b>【機率分布與動能】</b><br>
+            • 未來看多機率：<span style="color:#9F353A; font-weight:600;">{an['機率預測']['看多']}%</span><br>
+            • 動能狀態：<span style="color:{'#9F353A' if sig['mom']>0 else '#3A5F41'};">{'加速增強' if sig['mom']>0 else '高檔衰退'}</span><br>
+            • 統計分佈：{an['機率預測']['分布']}
+        </div>
+    </div>
+</div>
+"""
+components.html(html_report, height=450)
+
+# --- 6. 損益帳本與變動 ---
+st.markdown(f"### 💰 帳戶資金變動：目前累積淨值 {sig['equity']:,} TWD (獲利 {sig['equity']-cap:+,})")
+st.markdown("### 📑 資深操盤詳細日誌 (K棒形態與動能偵測)")
+if not ledger_df.empty:
+    for _, row in ledger_df.head(15).iterrows():
+        with st.expander(f"📅 {row['日期']} | {row['動作']} | 價格: {row['價格']} | 本金累積: {row['餘額']:,}"):
+            st.info(row['分析'])
+
+# --- 7. 圖表視覺化 (三角形訊號) ---
+st.markdown("### 📈 雙向訊號追蹤與形態標註 (紅多綠空)")
+fig = go.Figure()
+fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name="價格", line=dict(color="#000", width=1)))
+
+if not ledger_df.empty:
+    longs = ledger_df[ledger_df['動作'] == "▲ 做多"]
+    fig.add_trace(go.Scatter(x=pd.to_datetime(longs['日期']), y=longs['價格'], mode='markers', name='做多', marker=dict(symbol='triangle-up', size=14, color='#9F353A')))
+    shorts = ledger_df[ledger_df['動作'] == "▼ 放空"]
+    fig.add_trace(go.Scatter(x=pd.to_datetime(shorts['日期']), y=shorts['價格'], mode='markers', name='放空', marker=dict(symbol='triangle-down', size=14, color='#3A5F41')))
+
+fig.update_layout(template="plotly_white", paper_bgcolor="#F7F3E9", plot_bgcolor="#F7F3E9", height=500)
+st.plotly_chart(fig, use_container_width=True)
