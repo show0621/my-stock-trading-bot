@@ -1,7 +1,7 @@
 """
 策略名稱：TSMOM 多重時間尺度量化策略
 作者：李孟霖
-版本：20260416-V01-Groq (Llama-3.3 最新修正與雙重防呆版)
+版本：20260416-V01-Groq (Llama-3.3 外資語氣強制校準版)
 """
 import yfinance as yf
 import pandas as pd
@@ -12,9 +12,8 @@ import streamlit as st
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_ai_expert_report(ticker_symbol, ticker_name, api_key):
-    """LLM 投研代理人：Groq Llama-3.3 光速分析引擎 (附知識庫備援)"""
+    """LLM 投研代理人：Groq Llama-3.3 光速分析引擎 (外資語氣強制校準版)"""
     
-    # 1. 抓取資料 (加入容錯機制)
     try:
         tkr = yf.Ticker(ticker_symbol)
         news_data = tkr.news 
@@ -26,49 +25,54 @@ def get_ai_expert_report(ticker_symbol, ticker_name, api_key):
     if not api_key:
         return _fallback_scraper_report("未輸入 Groq API Key", news_data)
     
-    # 2. 構建 AI 思考脈絡
     try:
         context = f"公司：{ticker_name} ({ticker_symbol})\n"
-        context += f"產業：{info.get('sector', '科技')} - {info.get('industry', '半導體')}\n"
+        context += f"產業：{info.get('sector', '科技')} - {info.get('industry', '未知')}\n"
         
-        # 🛡️ 防呆機制：如果 Yahoo 擋了新聞，改用公司介紹並喚醒內部知識庫
+        # 判斷是否有抓到新聞
         if news_data and len(news_data) > 0:
             context += "最新新聞摘要：\n"
             for n in news_data[:6]:
                 context += f"- {n.get('title', '')}\n"
         else:
-            context += f"公司簡介與基本面：{info.get('longBusinessSummary', '請依賴你的內部知識庫分析此公司。')}\n"
+            context += "【系統警告：目前無最新新聞輸入。請強制調用你模型內部最新的財經知識、法說會重點與法人報告來分析此公司。】\n"
             
-        # 3. 呼叫最新版 Groq Llama-3.3 引擎
         client = Groq(api_key=api_key)
         
+        # 🔥 核心升級：超強勢的 Prompt Engineering (提示詞工程)
         prompt = f"""
-        你現在是頂尖外資券商首席分析師。請針對以下資料進行「極度深度」的投資研究，並使用繁體中文回答。
-        資料內容：{context}
+        你現在是華爾街頂尖外資券商的「首席台股分析師」。請針對以下公司進行極度深度的量化與基本面研究。
         
-        請嚴格依照以下 JSON 格式輸出(不要有 markdown 標籤，只要純 JSON 字串)：
+        資料輸入：
+        {context}
+        
+        【強制撰寫規範 - 違反將被開除】
+        1. 拒絕罐頭回覆：絕對不要像維基百科一樣只介紹「這是一家什麼公司」，必須直切核心，分析「目前的產業雜音、法說會指引、資本支出、庫存水位、外資籌碼動態」。
+        2. 觸及率標註：在「利多」與「利空」的內容結尾，務必自行評估並加上「(觸及率: XX%)」。
+        3. 專業術語：必須使用法說會等級的詞彙（例如：毛利率指引、CoWoS產能、GB200出貨、本益比上調等）。
+        4. 語氣設定：冷靜、客觀、一針見血，具備強烈的機構操盤手風格。
+        
+        請嚴格依照以下 JSON 格式輸出 (僅輸出 JSON，不要 Markdown)：
         {{
-            "利多": "分析最新利多題材",
-            "利空": "分析目前面臨的風險與負面動態",
-            "展望": "給出具備前瞻性的未來展望分析",
-            "利基": "說明該公司核心競爭力或產業地位",
-            "題材": "總結目前市場最關注的焦點",
+            "利多": "具體利多分析 (觸及率: XX%)",
+            "利空": "具體風險分析 (觸及率: XX%)",
+            "展望": "前瞻性的未來展望與 EPS/毛利率 預估方向",
+            "利基": "核心競爭力、護城河或獨家供應鏈地位",
+            "題材": "總結目前市場最關注的法說會焦點或法人關注點",
             "機率": {{"多": 數字, "空": 數字, "盤": 數字}}
         }}
-        機率總和需為 100。
+        機率總和為100。
         """
         
-        # 移除容易報錯的 JSON format 參數，改用純文字提示與後端清洗
         chat_completion = client.chat.completions.create(
             messages=[
-                {"role": "system", "content": "你是一個專門輸出 JSON 格式的頂尖金融分析師。請只輸出 JSON，不要包含任何其他文字。"},
+                {"role": "system", "content": "你是一個冷靜、犀利、專門輸出 JSON 格式的頂尖外資分析師。"},
                 {"role": "user", "content": prompt}
             ],
             model="llama-3.3-70b-versatile",
-            temperature=0.2
+            temperature=0.3 # 稍微提高溫度，讓它寫出來的文字更具多樣性與分析感
         )
         
-        # 4. JSON 字串終極清洗 (防止 AI 囉嗦回傳 ```json 標籤)
         clean_json = chat_completion.choices[0].message.content.strip()
         if clean_json.startswith('```'):
             clean_json = clean_json.split('\n', 1)[1]
