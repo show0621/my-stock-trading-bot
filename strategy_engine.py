@@ -1,3 +1,9 @@
+"""
+策略名稱：TSMOM 多重時間尺度量化策略
+作者：李孟霖
+版本：20260416-V01-AI (Gemini 2.5 Flash 升級版)
+策略參考：Time Series Momentum (Tobias J. Moskowitz, 2012)
+"""
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -12,18 +18,18 @@ def get_ai_expert_report(ticker_symbol, ticker_name, api_key):
     try:
         # 1. 抓取即時情資
         tkr = yf.Ticker(ticker_symbol)
-        news = tkr.news[:8] # 抓取最新 8 則新聞
+        news = tkr.news[:8] 
         info = tkr.info
         
         context = f"公司：{ticker_name} ({ticker_symbol})\n"
-        context += f"產業：{info.get('sector')} - {info.get('industry')}\n"
+        context += f"產業：{info.get('sector', '未知')} - {info.get('industry', '未知')}\n"
         context += "最新新聞摘要：\n"
         for n in news:
-            context += f"- {n.get('title')}\n"
+            context += f"- {n.get('title', '')}\n"
             
-        # 2. 配置 Gemini API
+        # 2. 配置 Gemini API (🔥 關鍵升級：換上 Google 最新的 2.5 代 AI 大腦)
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         
         prompt = f"""
         你現在是頂尖外資券商首席分析師。請針對以下資料進行「極度深度」的投資研究。
@@ -33,16 +39,15 @@ def get_ai_expert_report(ticker_symbol, ticker_name, api_key):
         {{
             "利多": "分析最新利多題材，並在括號標註網路觸及率百分比",
             "利空": "分析目前面臨的風險與負面動態，並標註觸及率百分比",
-            "展望": "給出具備前瞻性的 2026 展望分析",
+            "展望": "給出具備前瞻性的未來展望分析",
             "利基": "說明該公司核心競爭力或產業地位",
             "題材": "總結目前市場最關注的法說會或產業焦點",
             "機率": {{"多": 數字, "空": 數字, "盤": 數字}}
         }}
-        輸出規則：語氣必須專業、犀利。內容要包含具體的細節（如低軌衛星、CoWoS 等），機率總和需為 100。
+        輸出規則：語氣必須專業、犀利。內容要包含具體細節，機率總和需為 100。
         """
         
         response = model.generate_content(prompt)
-        # 移除可能存在的 Markdown 代碼塊標記
         clean_json = response.text.replace('```json', '').replace('```', '').strip()
         return json.loads(clean_json)
     except Exception as e:
@@ -80,12 +85,4 @@ def get_trading_signal(ticker, name, cap, api_key):
                 shares = (equity * curr_w) / buy_p
                 cash = equity - (equity * curr_w)
                 trades.append({"日期":date,"動作":"▲ 買進建倉","價格":round(buy_p,1),"餘額":int(equity),"分析":f"**【TSMOM 動能進場】** 信心:{row['Confidence']:.2f}。波動率:{row['YZ_Vol']:.1%}。投入資金:{int(equity*curr_w):,} TWD。"})
-            elif curr_w == 0 and prev_w > 0:
-                profit = shares * (row['Close'] - buy_p)
-                cash += (shares * row['Close'])
-                equity = cash
-                shares = 0
-                trades.append({"日期":date,"動作":"◆ 平倉保護","價格":round(row['Close'],1),"餘額":int(equity),"分析":f"**【動能衰減平倉】** 分數降至:{row['Confidence']:.2f}。結算損益:**{profit:+.0f} TWD**。"})
-            if shares > 0: equity = cash + (shares * row['Close'])
-        return {"history":df, "ledger":trades[::-1], "equity":int(equity), "report":get_ai_expert_report(ticker, name, api_key), "stats":df.iloc[-1]}
-    except: return None
+            elif curr_w == 0 and prev_w > 0
