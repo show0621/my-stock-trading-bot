@@ -3,4 +3,4 @@ pandas
 numpy
 yfinance
 plotly
-google-generativeai
+groq
