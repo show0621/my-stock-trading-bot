@@ -1,7 +1,7 @@
 """
 策略名稱：TSMOM 多重時間尺度量化策略
 作者：李孟霖
-版本：20260416-V01-Groq (Llama-3-70B 光速運算版)
+版本：20260416-V01-Groq (Llama-3.3 最新修正與雙重防呆版)
 """
 import yfinance as yf
 import pandas as pd
@@ -12,11 +12,12 @@ import streamlit as st
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def get_ai_expert_report(ticker_symbol, ticker_name, api_key):
-    """LLM 投研代理人：Groq Llama-3 光速分析引擎"""
+    """LLM 投研代理人：Groq Llama-3.3 光速分析引擎 (附知識庫備援)"""
     
+    # 1. 抓取資料 (加入容錯機制)
     try:
         tkr = yf.Ticker(ticker_symbol)
-        news_data = tkr.news[:6] 
+        news_data = tkr.news 
         info = tkr.info
     except:
         news_data = []
@@ -25,14 +26,20 @@ def get_ai_expert_report(ticker_symbol, ticker_name, api_key):
     if not api_key:
         return _fallback_scraper_report("未輸入 Groq API Key", news_data)
     
+    # 2. 構建 AI 思考脈絡
     try:
         context = f"公司：{ticker_name} ({ticker_symbol})\n"
-        context += f"產業：{info.get('sector', '未知')} - {info.get('industry', '未知')}\n"
-        context += "最新新聞摘要：\n"
-        for n in news_data:
-            context += f"- {n.get('title', '')}\n"
+        context += f"產業：{info.get('sector', '科技')} - {info.get('industry', '半導體')}\n"
+        
+        # 🛡️ 防呆機制：如果 Yahoo 擋了新聞，改用公司介紹並喚醒內部知識庫
+        if news_data and len(news_data) > 0:
+            context += "最新新聞摘要：\n"
+            for n in news_data[:6]:
+                context += f"- {n.get('title', '')}\n"
+        else:
+            context += f"公司簡介與基本面：{info.get('longBusinessSummary', '請依賴你的內部知識庫分析此公司。')}\n"
             
-        # 初始化 Groq 晶片連線
+        # 3. 呼叫最新版 Groq Llama-3.3 引擎
         client = Groq(api_key=api_key)
         
         prompt = f"""
@@ -51,18 +58,23 @@ def get_ai_expert_report(ticker_symbol, ticker_name, api_key):
         機率總和需為 100。
         """
         
-        # 呼叫 Llama-3 70B 模型，並強制鎖定 JSON 輸出格式
+        # 移除容易報錯的 JSON format 參數，改用純文字提示與後端清洗
         chat_completion = client.chat.completions.create(
             messages=[
-                {"role": "system", "content": "你是一個專門輸出 JSON 格式的頂尖金融分析師。"},
+                {"role": "system", "content": "你是一個專門輸出 JSON 格式的頂尖金融分析師。請只輸出 JSON，不要包含任何其他文字。"},
                 {"role": "user", "content": prompt}
             ],
-            model="llama3-70b-8192",
-            temperature=0.2,
-            response_format={"type": "json_object"}
+            model="llama-3.3-70b-versatile",
+            temperature=0.2
         )
         
+        # 4. JSON 字串終極清洗 (防止 AI 囉嗦回傳 ```json 標籤)
         clean_json = chat_completion.choices[0].message.content.strip()
+        if clean_json.startswith('```'):
+            clean_json = clean_json.split('\n', 1)[1]
+            if clean_json.endswith('```'):
+                clean_json = clean_json.rsplit('\n', 1)[0]
+                
         return json.loads(clean_json)
         
     except Exception as e:
@@ -70,14 +82,14 @@ def get_ai_expert_report(ticker_symbol, ticker_name, api_key):
         if "rate limit" in error_msg.lower() or "429" in error_msg:
             reason = "API 請求過於頻繁 (Rate Limit)"
         else:
-            reason = f"AI 模型連線異常 ({error_msg[:30]})"
+            reason = f"AI 連線異常 ({error_msg[:30]})"
         return _fallback_scraper_report(reason, news_data)
 
 def _fallback_scraper_report(reason, news_data):
-    if not news_data:
-        news_str = "無法抓取到近期新聞。"
+    if not news_data or len(news_data) == 0:
+        news_str = "Yahoo Finance 阻擋了新聞抓取，無近期新聞。"
     else:
-        news_str = "<br>".join([f"🔸 {n.get('title', '無標題')}" for n in news_data])
+        news_str = "<br>".join([f"🔸 {n.get('title', '無標題')}" for n in news_data[:6]])
 
     return {
         "利多": f"<span style='color:#888;'>[系統切換為純爬蟲模式，原因：{reason}]</span><br><br><b>【即時新聞聯網抓取】</b><br>{news_str}",
