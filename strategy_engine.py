@@ -1,41 +1,100 @@
-import streamlit as st, pandas as pd, plotly.graph_objects as go
-from strategy_engine import get_trading_signal
+"""
+策略名稱：TSMOM 多重時間尺度量化策略
+作者：李孟霖
+版本：20260416-V01-AI (Gemini 2.5 快取記憶升級版)
+策略參考：Time Series Momentum (Tobias J. Moskowitz, 2012)
+"""
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import google.generativeai as genai
+import json
+import streamlit as st  # 引入 streamlit 來使用快取魔法
 
-st.set_page_config(page_title="李孟霖 | AI首席投研終端", layout="wide", initial_sidebar_state="expanded")
-css = "<style>:root{color-scheme:light !important;}.stApp,.main{background-color:#F7F3E9 !important;}html,body,[class*='css'],p,span,div,h1,h2,h3,h4,h5,h6,label,li{color:#000000 !important;font-family:'Noto Serif TC',serif;}[data-testid='stSidebar']{background-color:#FFFFFF !important;border-right:1px solid #D6D2C4;}header[data-testid='stHeader']{background-color:transparent !important;}[data-testid='collapsedControl']{background-color:#FFFFFF !important;border-radius:50% !important;}[data-testid='stExpander']{background-color:#FFFFFF !important;border:1px solid #D6D2C4 !important;border-radius:8px !important;}input,select,textarea{background-color:#FFFFFF !important;color:#000000 !important;-webkit-text-fill-color:#000000 !important;}.status-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;background:#FFFFFF;padding:15px;border-radius:10px;border:1px solid #D6D2C4;margin-bottom:20px;}.s-title{font-size:12px;color:#666666;text-align:center;}.s-val{font-size:18px;font-weight:600;color:#000000;text-align:center;}.report-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid #E5E1D5;padding-bottom:10px;margin-bottom:15px;}.report-grid{display:grid;grid-template-columns:1fr 1fr;gap:25px;font-size:14.5px;line-height:1.7;}@media (max-width:768px){.status-grid{grid-template-columns:repeat(2,1fr);gap:15px;}.report-header{flex-direction:column;}.report-grid{grid-template-columns:1fr;}}.sidebar-footer{font-size:11px;color:#888888;margin-top:50px;border-top:1px solid #EEE;padding-top:10px;line-height:1.5;}</style>"
-st.markdown(css, unsafe_allow_html=True)
+# 🔥 關鍵升級：加入快取機制，ttl=3600 代表這份報告會記憶 1 小時 (3600秒)
+# 這樣就算你瘋狂切換股票或調整本金，也不會消耗 API 額度！
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_ai_expert_report(ticker_symbol, ticker_name, api_key):
+    """LLM 投研代理人：聯網抓取最新新聞並進行深度分析"""
+    if not api_key:
+        return {"利多":"未輸入 API Key","利空":"無法啟動 AI 分析","展望":"請於側邊欄設定","利基":"---","題材":"---","機率":{"多":33,"空":33,"盤":34}}
+    
+    try:
+        # 1. 抓取即時情資
+        tkr = yf.Ticker(ticker_symbol)
+        news = tkr.news[:8] 
+        info = tkr.info
+        
+        context = f"公司：{ticker_name} ({ticker_symbol})\n"
+        context += f"產業：{info.get('sector', '未知')} - {info.get('industry', '未知')}\n"
+        context += "最新新聞摘要：\n"
+        for n in news:
+            context += f"- {n.get('title', '')}\n"
+            
+        # 2. 配置 Gemini API
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        
+        prompt = f"""
+        你現在是頂尖外資券商首席分析師。請針對以下資料進行「極度深度」的投資研究。
+        資料內容：{context}
+        
+        請嚴格依照以下 JSON 格式輸出(不要有 markdown 標籤，只要純 JSON 字串)：
+        {{
+            "利多": "分析最新利多題材，並在括號標註網路觸及率百分比",
+            "利空": "分析目前面臨的風險與負面動態，並標註觸及率百分比",
+            "展望": "給出具備前瞻性的未來展望分析",
+            "利基": "說明該公司核心競爭力或產業地位",
+            "題材": "總結目前市場最關注的法說會或產業焦點",
+            "機率": {{"多": 數字, "空": 數字, "盤": 數字}}
+        }}
+        輸出規則：語氣必須專業、犀利。內容要包含具體細節，機率總和需為 100。
+        """
+        
+        response = model.generate_content(prompt)
+        clean_json = response.text.replace('```json', '').replace('```', '').strip()
+        return json.loads(clean_json)
+    except Exception as e:
+        return {"利多":"AI 分析暫時離線","利空":str(e),"展望":"請稍後再試","利基":"---","題材":"---","機率":{"多":0,"空":0,"盤":100}}
 
-with st.sidebar:
-    st.title("🎐 AI 投資指揮中心")
-    api_k = st.text_input("🔑 Gemini API Key", type="password", placeholder="請貼上金鑰")
-    cap = st.number_input("本金設定", value=2000000)
-    ind_map = {"半導體核心":{"台積電 (2330)":"2330.TW","聯發科 (2454)":"2454.TW","日月光 (3711)":"3711.TW"},"AI與伺服器":{"鴻海 (2317)":"2317.TW","廣達 (2382)":"2382.TW","緯穎 (6669)":"6669.TW"},"傳產與金控":{"富邦金 (2881)":"2881.TW","中信金 (2891)":"2891.TW","信錦 (1582)":"1582.TW"},"🔍 全台股手動輸入":"MANUAL"}
-    sel_ind = st.radio("📁 產業類別", list(ind_map.keys()))
-    if sel_ind == "🔍 全台股手動輸入":
-        raw_code = st.text_input("輸入代號", value="2382")
-        t_sym, t_nm = f"{raw_code}.TW", f"自選 ({raw_code})"
-    else:
-        t_nm = st.selectbox("🎯 選擇標的", list(ind_map[sel_ind].keys()))
-        t_sym = ind_map[sel_ind][t_nm]
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    # 🔥 終極解法：獨立的執行按鈕，不再因為隨便點擊就觸發 API
-    run_btn = st.button("🚀 執行深度量化與 AI 分析", use_container_width=True)
-    
-    st.markdown(f'<div class="sidebar-footer"><b>作者：</b> 李孟霖<br><b>版本：</b> 20260416-V02-ManualTrigger<br><b>策略參考：</b><br>Time Series Momentum (2012)</div>', unsafe_allow_html=True)
+def calculate_yz_volatility(df, window=20):
+    try:
+        log_ho, log_lo = np.log(df['High']/df['Open']), np.log(df['Low']/df['Open'])
+        log_co, log_oc = np.log(df['Close']/df['Open']), np.log(df['Open']/df['Close'].shift(1))
+        v_o = log_oc.rolling(window).var()
+        v_c = log_co.rolling(window).var()
+        v_rs = (log_ho*(log_ho-log_co)+log_lo*(log_lo-log_co)).rolling(window).mean()
+        k = 0.34/(1.34+(window+1)/(window-1))
+        return np.sqrt((v_o+k*v_c+(1-k)*v_rs)*252)
+    except: return pd.Series(0.3, index=df.index)
 
-# 狀態管理：只有按下按鈕時，才執行大腦運算，並存入 session_state
-if run_btn:
-    with st.spinner("🚀 AI 正在深度掃描全球新聞與量化數據... (約需 5~10 秒)"): 
-        st.session_state['sig'] = get_trading_signal(t_sym, t_nm, cap, api_k)
-
-# 渲染邏輯：只要 session_state 裡面有資料，就顯示出來
-if 'sig' in st.session_state and st.session_state['sig']:
-    sig = st.session_state['sig']
-    df, l_df, an, sr = sig['history'], pd.DataFrame(sig['ledger']), sig['report'], sig['stats']
-    v_r, v_s, v_sl, v_tp = str(int(sr['Res'])), str(int(sr['Sup'])), str(round(sr['SL'],1)), str(round(sr['TP'],1))
-    v_c, v_v, v_w = str(round(sr['Confidence'],2)), str(round(sr['YZ_Vol']*100,1))+"%", str(round(sr['Weight']*100,1))+"%"
-    
-    st.markdown(f'<div class="status-grid"><div><div class="s-title">壓力 / 支撐位</div><div class="s-val">{v_r} / {v_s}</div></div><div><div class="s-title">停損 / 停利點</div><div class="s-val" style="color:#9F353A;">{v_sl} / {v_tp}</div></div><div><div class="s-title">趨勢信心 / YZ年化</div><div class="s-val">{v_c} / {v_v}</div></div><div><div class="s-title">動態配置權重</div><div class="s-val" style="color:#B18D4D;">{v_w}</div></div></div>', unsafe_allow_html=True)
-    
-    st.markdown(f'<div style="background:#FFFFFF;padding:20px;border:2px solid #B18D4D;border-radius:12px;color:#000;margin-bottom:20px;"><div class="report-header"><h3 style="margin:0;color
+def get_trading_signal(ticker, name, cap, api_key):
+    try:
+        df = yf.download(ticker, period="2y", progress=False, auto_adjust=False)
+        if df.empty: return None
+        if isinstance(df.columns, pd.MultiIndex): df.columns = [c[0] for c in df.columns]
+        df = df.dropna()
+        df['S20'], df['S60'], df['S120'] = (np.where(df['Close']>df['Close'].shift(x), 1, -1) for x in [20, 60, 120])
+        df['Confidence'] = ((df['S20']+df['S60']+df['S120'])/3).clip(lower=0)
+        df['YZ_Vol'] = calculate_yz_volatility(df)
+        df['Weight'] = (0.3/df['YZ_Vol']*df['Confidence']).clip(upper=1.0)
+        df['Sup'], df['Res'] = df['Low'].rolling(20).min(), df['High'].rolling(20).max()
+        df['SL'], df['TP'] = df['Close']*0.97, df['Close']*1.06
+        cash, shares, buy_p, equity, trades = cap, 0, 0, cap, []
+        for i in range(120, len(df)):
+            row, date = df.iloc[i], df.index[i].strftime('%Y/%m/%d')
+            prev_w, curr_w = df['Weight'].iloc[i-1], row['Weight']
+            if curr_w > 0 and prev_w == 0:
+                buy_p = row['Close']
+                shares = (equity * curr_w) / buy_p
+                cash = equity - (equity * curr_w)
+                trades.append({"日期":date,"動作":"▲ 買進建倉","價格":round(buy_p,1),"餘額":int(equity),"分析":f"**【TSMOM 動能進場】** 信心:{row['Confidence']:.2f}。波動率:{row['YZ_Vol']:.1%}。投入資金:{int(equity*curr_w):,} TWD。"})
+            elif curr_w == 0 and prev_w > 0:
+                profit = shares * (row['Close'] - buy_p)
+                cash += (shares * row['Close'])
+                equity = cash
+                shares = 0
+                trades.append({"日期":date,"動作":"◆ 平倉保護","價格":round(row['Close'],1),"餘額":int(equity),"分析":f"**【動能衰減平倉】** 分數降至:{row['Confidence']:.2f}。結算損益:**{profit:+.0f} TWD**。"})
+            if shares > 0: equity = cash + (shares * row['Close'])
+        return {"history":df, "ledger":trades[::-1], "equity":int(equity), "report":get_ai_expert_report(ticker, name, api_key), "stats":df.iloc[-1]}
+    except: return None
