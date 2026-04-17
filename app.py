@@ -5,7 +5,6 @@ from strategy_engine import get_trading_signal
 
 st.set_page_config(page_title="李孟霖 | AI首席投研終端", layout="wide", initial_sidebar_state="expanded")
 
-# 將 CSS 切成小積木，防止單行過長被手機切斷
 css = (
     "<style>"
     ":root{color-scheme:light !important;}"
@@ -29,7 +28,10 @@ st.markdown(css, unsafe_allow_html=True)
 
 with st.sidebar:
     st.title("🎐 AI 投資指揮中心")
-    api_k = st.text_input("🔑 Gemini API Key", type="password", placeholder="貼上後請按 Enter 鍵確認")
+    
+    # 修改為 Groq API 提示
+    api_k = st.text_input("🔑 Groq API Key", type="password", placeholder="貼上後請按 Enter 鍵確認")
+    
     cap = st.number_input("本金設定", value=2000000)
     
     ind_map = {
@@ -48,10 +50,10 @@ with st.sidebar:
         t_nm = st.selectbox("🎯 選擇標的", list(ind_map[sel_ind].keys()))
         t_sym = ind_map[sel_ind][t_nm]
         
-    sb_text = '<div class="sidebar-footer"><b>作者：</b> 李孟霖<br><b>版本：</b> 20260416-V01-AI<br><b>策略參考：</b><br>Time Series Momentum (2012)</div>'
+    sb_text = '<div class="sidebar-footer"><b>作者：</b> 李孟霖<br><b>版本：</b> 20260416-V01-Groq<br><b>策略參考：</b><br>Time Series Momentum (2012)</div>'
     st.markdown(sb_text, unsafe_allow_html=True)
 
-with st.spinner("🚀 AI 正在深度掃描全球新聞與量化數據..."): 
+with st.spinner("🚀 Llama-3 正在光速掃描新聞與量化數據..."): 
     sig = get_trading_signal(t_sym, t_nm, cap, api_k)
 
 if sig:
@@ -68,7 +70,6 @@ if sig:
     v_v = str(round(sr['YZ_Vol']*100, 1)) + "%"
     v_w = str(round(sr['Weight']*100, 1)) + "%"
 
-    # 將狀態牆 HTML 切成小積木
     sg_1 = '<div class="status-grid">'
     sg_2 = f'<div><div class="s-title">壓力 / 支撐位</div><div class="s-val">{v_r} / {v_s}</div></div>'
     sg_3 = f'<div><div class="s-title">停損 / 停利點</div><div class="s-val" style="color:#9F353A;">{v_sl} / {v_tp}</div></div>'
@@ -77,10 +78,9 @@ if sig:
     sg_6 = '</div>'
     st.markdown(sg_1 + sg_2 + sg_3 + sg_4 + sg_5 + sg_6, unsafe_allow_html=True)
 
-    # 將超長報告 HTML 切成小積木
     html_1 = '<div style="background:#FFFFFF;padding:20px;border:2px solid #B18D4D;border-radius:12px;color:#000;margin-bottom:20px;">'
     html_2 = f'<div class="report-header"><h3 style="margin:0;color:#9F353A;">⚖️ AI 首席深度投研報告：{t_nm}</h3>'
-    html_3 = '<div style="font-size:11px;color:#888;text-align:right;">核心：Gemini AI 動態聯網分析</div></div>'
+    html_3 = '<div style="font-size:11px;color:#888;text-align:right;">核心：Groq Llama-3 動態聯網分析</div></div>'
     html_4 = f'<div class="report-grid"><div><b style="color:#9F353A;">【利多題材與觸及率】</b><br>{an.get("利多","")}<br><br>'
     html_5 = f'<b style="color:#3A5F41;">【利空風險與觸及率】</b><br>{an.get("利空","")}<br><br>'
     html_6 = f'<b>【核心利基點】</b><br>{an.get("利基","")}</div>'
