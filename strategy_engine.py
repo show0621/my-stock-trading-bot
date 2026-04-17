@@ -1,7 +1,7 @@
 """
 策略名稱：TSMOM 多重時間尺度量化策略
 作者：李孟霖
-版本：20260416-V01-AI (Gemini 2.5 Flash 升級版)
+版本：20260416-V01-AI (Gemini 2.5 快取記憶升級版)
 策略參考：Time Series Momentum (Tobias J. Moskowitz, 2012)
 """
 import yfinance as yf
@@ -9,7 +9,11 @@ import pandas as pd
 import numpy as np
 import google.generativeai as genai
 import json
+import streamlit as st  # 引入 streamlit 來使用快取魔法
 
+# 🔥 關鍵升級：加入快取機制，ttl=3600 代表這份報告會記憶 1 小時 (3600秒)
+# 這樣就算你瘋狂切換股票或調整本金，也不會消耗 API 額度！
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_ai_expert_report(ticker_symbol, ticker_name, api_key):
     """LLM 投研代理人：聯網抓取最新新聞並進行深度分析"""
     if not api_key:
@@ -27,7 +31,7 @@ def get_ai_expert_report(ticker_symbol, ticker_name, api_key):
         for n in news:
             context += f"- {n.get('title', '')}\n"
             
-        # 2. 配置 Gemini API (🔥 關鍵升級：換上 Google 最新的 2.5 代 AI 大腦)
+        # 2. 配置 Gemini API
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-2.5-flash')
         
