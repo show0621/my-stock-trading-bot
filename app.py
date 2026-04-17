@@ -46,4 +46,72 @@ if sig:
     
     # 狀態牆數值
     v_r, v_s = str(int(sr['High'])), str(int(sr['Low']))
-    v_sl, v_
+    v_sl, v_tp = str(round(sr['Close']*0.97, 1)), str(round(sr['Close']*1.06, 1))
+    v_c, v_v = str(round(sr['Confidence'], 2)), str(round(sr['YZ_Vol']*100, 1))+"%"
+    v_w = str(round(sr['Weight']*100, 1))+"%"
+    c_type = sig.get("chip_type", "判定中")
+
+    # 狀態牆積木
+    sg = (
+        f'<div class="status-grid">'
+        f'<div><div class="s-title">壓力/支撐</div><div class="s-val">{v_r}/{v_s}</div></div>'
+        f'<div><div class="s-title">停損/停利</div><div class="s-val" style="color:#9F353A;">{v_sl}/{v_tp}</div></div>'
+        f'<div><div class="s-title">信心/波動</div><div class="s-val">{v_c}/{v_v}</div></div>'
+        f'<div><div class="s-title">配置權重</div><div class="s-val" style="color:#B18D4D;">{v_w}</div></div>'
+        f'<div><div class="s-title">籌碼主導權</div><div class="s-val" style="color:#3A5F41;">{c_type}</div></div>'
+        f'</div>'
+    )
+    st.markdown(sg, unsafe_allow_html=True)
+
+    # 防呆：預防 KeyError 崩潰
+    p_up = an.get("機率", {}).get("多", 33) if isinstance(an.get("機率"), dict) else 33
+    p_flat = an.get("機率", {}).get("盤", 34) if isinstance(an.get("機率"), dict) else 34
+    p_down = an.get("機率", {}).get("空", 33) if isinstance(an.get("機率"), dict) else 33
+
+    # 報告積木 (還原雙欄佈局)
+    rep_1 = '<div style="background:#FFFFFF;padding:20px;border:2px solid #B18D4D;border-radius:12px;color:#000;margin-bottom:20px;">'
+    rep_2 = f'<div class="report-header"><h3 style="margin:0;color:#9F353A;">⚖️ AI 首席深度投研報告：{t_nm}</h3><div style="font-size:11px;color:#888;">核心：Llama-3.3 籌碼融合分析</div></div>'
+    rep_3 = f'<div class="report-grid"><div><b style="color:#9F353A;">【利多分析】</b><br>{an.get("利多", "分析中...")}<br><br>'
+    rep_4 = f'<b style="color:#3A5F41;">【利空分析】</b><br>{an.get("利空", "分析中...")}<br><br>'
+    rep_5 = f'<b>【核心利基】</b><br>{an.get("利基", "分析中...")}</div>'
+    rep_6 = f'<div><b>【法說/籌碼題材】</b><br>{an.get("題材", "分析中...")}<br><br>'
+    rep_7 = f'<b>【未來展望】</b><br>{an.get("展望", "分析中...")}<br><br>'
+    rep_8 = f'<b>【機率分布】</b>多頭 <span style="color:#9F353A;font-weight:bold;">{p_up}%</span> | 盤整 {p_flat}% | 空頭 {p_down}%</div></div></div>'
+    
+    st.markdown(rep_1 + rep_2 + rep_3 + rep_4 + rep_5 + rep_6 + rep_7 + rep_8, unsafe_allow_html=True)
+
+    st.markdown(f"### 💰 帳戶資金變動：總淨值 {sig['equity']:,} TWD", unsafe_allow_html=True)
+
+    # ✅ 完美回歸：多頁顯示與 CSV 下載
+    if not l_df.empty:
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            csv_data = l_df.to_csv(index=False).encode('utf-8-sig')
+            st.download_button("📥 下載完整紀錄 (CSV)", data=csv_data, file_name=f"{t_nm}_Report.csv", mime="text/csv")
+        with col2:
+            max_p = max(1, (len(l_df)-1)//10+1)
+            p_num = st.number_input(f"📄 選擇頁碼 (共 {max_p} 頁)", min_value=1, max_value=max_p, value=1)
+            
+        start_i = (p_num-1)*10
+        end_i = p_num*10
+        for _, r in l_df.iloc[start_i:end_i].iterrows():
+            with st.expander(f"📅 {r['日期']} | {r['動作']} | 價格: {r['價格']} | 結算: {r['餘額']:,}"): 
+                st.markdown(r['分析'])
+                
+    # ✅ 完美回歸：買賣紅綠三角訊號圖
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df.index, y=df['Close'], name="收盤價", line=dict(color="#000", width=1.5)))
+    
+    if not l_df.empty:
+        longs = l_df[l_df['動作'].str.contains("買進")]
+        if not longs.empty:
+            fig.add_trace(go.Scatter(x=pd.to_datetime(longs['日期']), y=longs['價格'], mode='markers', name='波段進場', marker=dict(symbol='triangle-up', size=16, color='#9F353A')))
+            
+        shorts = l_df[l_df['動作'].str.contains("平倉")]
+        if not shorts.empty:
+            fig.add_trace(go.Scatter(x=pd.to_datetime(shorts['日期']), y=shorts['價格'], mode='markers', name='平倉出場', marker=dict(symbol='triangle-down', size=16, color='#3A5F41')))
+            
+    fig.update_layout(template="plotly_white", paper_bgcolor="#F7F3E9", plot_bgcolor="#F7F3E9", height=400, margin=dict(l=0,r=0,t=20,b=10))
+    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+else: 
+    st.error("❌ 系統初始化失敗，請檢查網路或代號。")
