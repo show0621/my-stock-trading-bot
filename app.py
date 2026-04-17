@@ -5,7 +5,10 @@ css = "<style>:root{color-scheme:light !important;}.stApp,.main{background-color
 st.markdown(css, unsafe_allow_html=True)
 with st.sidebar:
     st.title("🎐 AI 投資指揮中心")
-    api_k = st.text_input("🔑 Gemini API Key", type="password", help="請至 Google AI Studio 申請")
+    
+    # 加入明確的 Enter 提示
+    api_k = st.text_input("🔑 Gemini API Key", type="password", placeholder="貼上後請按 Enter 鍵確認")
+
     cap = st.number_input("本金設定", value=2000000)
     ind_map = {"半導體核心":{"台積電 (2330)":"2330.TW","聯發科 (2454)":"2454.TW","日月光 (3711)":"3711.TW"},"AI與伺服器":{"鴻海 (2317)":"2317.TW","廣達 (2382)":"2382.TW","緯穎 (6669)":"6669.TW"},"傳產與金控":{"富邦金 (2881)":"2881.TW","中信金 (2891)":"2891.TW","信錦 (1582)":"1582.TW"},"🔍 全台股手動輸入":"MANUAL"}
     sel_ind = st.radio("📁 產業類別", list(ind_map.keys()))
@@ -16,7 +19,10 @@ with st.sidebar:
         t_nm = st.selectbox("🎯 選擇標的", list(ind_map[sel_ind].keys()))
         t_sym = ind_map[sel_ind][t_nm]
     st.markdown(f'<div class="sidebar-footer"><b>作者：</b> 李孟霖<br><b>版本：</b> 20260416-V01-AI<br><b>策略參考：</b><br>Time Series Momentum (2012)</div>', unsafe_allow_html=True)
-with st.spinner("🚀 AI 正在深度掃描全球新聞與量化數據..."): sig = get_trading_signal(t_sym, t_nm, cap, api_k)
+
+with st.spinner("🚀 AI 正在深度掃描全球新聞與量化數據..."): 
+    sig = get_trading_signal(t_sym, t_nm, cap, api_k)
+
 if sig:
     df, l_df, an, sr = sig['history'], pd.DataFrame(sig['ledger']), sig['report'], sig['stats']
     v_r, v_s, v_sl, v_tp = str(int(sr['Res'])), str(int(sr['Sup'])), str(round(sr['SL'],1)), str(round(sr['TP'],1))
