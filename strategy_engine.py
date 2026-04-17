@@ -85,4 +85,12 @@ def get_trading_signal(ticker, name, cap, api_key):
                 shares = (equity * curr_w) / buy_p
                 cash = equity - (equity * curr_w)
                 trades.append({"日期":date,"動作":"▲ 買進建倉","價格":round(buy_p,1),"餘額":int(equity),"分析":f"**【TSMOM 動能進場】** 信心:{row['Confidence']:.2f}。波動率:{row['YZ_Vol']:.1%}。投入資金:{int(equity*curr_w):,} TWD。"})
-            elif curr_w == 0 and prev_w > 0
+            elif curr_w == 0 and prev_w > 0:
+                profit = shares * (row['Close'] - buy_p)
+                cash += (shares * row['Close'])
+                equity = cash
+                shares = 0
+                trades.append({"日期":date,"動作":"◆ 平倉保護","價格":round(row['Close'],1),"餘額":int(equity),"分析":f"**【動能衰減平倉】** 分數降至:{row['Confidence']:.2f}。結算損益:**{profit:+.0f} TWD**。"})
+            if shares > 0: equity = cash + (shares * row['Close'])
+        return {"history":df, "ledger":trades[::-1], "equity":int(equity), "report":get_ai_expert_report(ticker, name, api_key), "stats":df.iloc[-1]}
+    except: return None
