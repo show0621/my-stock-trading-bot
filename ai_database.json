@@ -1,3 +1,83 @@
 {
-    "update_time": "2026-04-18 08:10:49"
+    "update_time": "2026-04-18 08:12:49",
+    "2330.TW": {
+        "name": "TAIWAN SEMICONDUCTOR MANUFACTUR",
+        "report": {
+            "bullish": "N/A - 無法分析，因為沒有提供新聞內容。",
+            "bearish": "N/A - 無法分析，因為沒有提供新聞內容。",
+            "outlook": "無法判斷，因為缺乏新聞內容進行分析。"
+        }
+    },
+    "2317.TW": {
+        "name": "HON HAI PRECISION INDUSTRY",
+        "report": {
+            "bullish": "無可用新聞資料進行分析。",
+            "bearish": "無可用新聞資料進行分析。",
+            "outlook": "無法評估，因缺乏新聞資訊。"
+        }
+    },
+    "2454.TW": {
+        "name": "MEDIATEK INC",
+        "report": {
+            "bullish": "None (No news provided for analysis)",
+            "bearish": "None (No news provided for analysis)",
+            "outlook": "Cannot determine an outlook without news articles for 2454.TW."
+        }
+    },
+    "2308.TW": {
+        "name": "DELTA ELECTRONIC",
+        "report": {
+            "bullish": "由於沒有提供具體新聞內容，無法分析任何看漲因素。",
+            "bearish": "由於沒有提供具體新聞內容，無法分析任何看跌因素。",
+            "outlook": "由於缺乏相關新聞資訊，無法對台股 2308.TW 提供市場展望分析。股票分析需要具體事件、財報或產業動態等資訊作為判斷依據。"
+        }
+    },
+    "2382.TW": {
+        "name": "QUANTA COMPUTER",
+        "report": {
+            "bullish": "無可用新聞資訊",
+            "bearish": "無可用新聞資訊",
+            "outlook": "無可用新聞資訊"
+        }
+    },
+    "2303.TW": {
+        "name": "UNITED MICRO ELECTRONICS",
+        "report": {
+            "bullish": "無新聞資料可供分析。",
+            "bearish": "無新聞資料可供分析。",
+            "outlook": "無法判斷，因未提供新聞資料。"
+        }
+    },
+    "2881.TW": {
+        "name": "FUBON FINANCIAL HLDG CO LTD",
+        "report": {
+            "bullish": "無新聞資料可供分析。",
+            "bearish": "無新聞資料可供分析。",
+            "outlook": "因缺乏相關新聞資訊，無法對 2881.TW 的市場情緒進行分析與預測。"
+        }
+    },
+    "2882.TW": {
+        "name": "CATHAY FINANCIAL HLDG CO",
+        "report": {
+            "bullish": "無相關新聞可供分析。",
+            "bearish": "無相關新聞可供分析。",
+            "outlook": "由於無提供新聞資訊，無法判斷其展望。"
+        }
+    },
+    "2891.TW": {
+        "name": "CTBC FINANCIAL HOLDINGS COMPANY",
+        "report": {
+            "bullish": "無法分析，因為未提供新聞內容。",
+            "bearish": "無法分析，因為未提供新聞內容。",
+            "outlook": "無法分析，因為未提供新聞內容。"
+        }
+    },
+    "3231.TW": {
+        "name": "WISTRON CORPORATION",
+        "report": {
+            "bullish": "無相關新聞可供分析，無法判斷。",
+            "bearish": "無相關新聞可供分析，無法判斷。",
+            "outlook": "無相關新聞可供分析，無法判斷市場展望。"
+        }
+    }
 }
