@@ -1,5 +1,4 @@
 name: Daily AI Report Update
-
 on:
   workflow_dispatch:
   schedule:
@@ -10,22 +9,21 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0 
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install yfinance pandas google-generativeai
+          # 強制更新 SDK 到最新版以支援 2026 模型
+          python -m pip install -U yfinance pandas google-generativeai
 
       - name: Run analysis
         env:
@@ -36,7 +34,6 @@ jobs:
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
-          # 先拉取遠端變更，避免 Rejected 錯誤
           git pull --rebase origin main
           git add ai_database.json
           git commit -m "Automated AI Update" || exit 0
