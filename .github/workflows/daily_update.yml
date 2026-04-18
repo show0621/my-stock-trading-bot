@@ -33,7 +33,13 @@ jobs:
         run: |
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
-          git pull origin main --rebase
+          
+          # 關鍵步驟：先將產出的檔案 commit，讓工作區乾淨
           git add ai_database.json
-          git commit -m "Automated AI Update" || exit 0
+          git commit -m "🤖 AI 自動更新資料庫" || echo "No changes to commit"
+          
+          # 此時工作區是乾淨的，可以安全地拉取網頁端的改動並合併
+          git pull origin main --rebase
+          
+          # 最後推送到 GitHub
           git push origin main
