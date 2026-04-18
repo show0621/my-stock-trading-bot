@@ -4,7 +4,4 @@ numpy
 yfinance
 plotly
 groq
-google
-genai
-json
-os
+google-genai
