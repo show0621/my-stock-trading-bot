@@ -60,7 +60,7 @@ def main():
     db = {"MARKET_SUMMARY": {"top_picks": [s["symbol"] for s in top_stocks], "update_time": time.strftime("%Y-%m-%d %H:%M:%S")}}
     
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash') # 使用穩定的 flash 模型
+    model = genai.GenerativeModel('gemini-3-flash') # 使用穩定的 flash 模型
 
     for s in top_stocks:
         sym = s["symbol"]
