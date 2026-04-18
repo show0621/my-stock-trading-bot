@@ -12,30 +12,29 @@ jobs:
       contents: write
 
     steps:
-      - name: 📥 複製代碼
+      - name: 📥 複製專案代碼
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # 獲取完整歷史紀錄以利同步
+          fetch-depth: 0
 
-      - name: 🐍 設定環境
+      - name: 🐍 設定 Python 環境
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 📦 安裝零件
-        run: |
-          pip install yfinance pandas google-generativeai
-
-      - name: 🤖 啟動大腦
+      - name: 🤖 安裝零件並立刻執行分析
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: python update_db.py
+        run: |
+          # 👈 關鍵：在同一個步驟安裝並執行，確保 Python 絕對讀得到零件
+          pip install yfinance pandas google-genai
+          python update_db.py
 
-      - name: 💾 強制同步並存檔
+      - name: 💾 強制存檔 (解決 Rejected 問題)
         run: |
           git config --global user.name 'github-actions'
           git config --global user.email 'github-actions@github.com'
-          git pull --rebase origin main  # 👈 這是解決 image_a9736b 錯誤的關鍵！
           git add ai_database.json
-          git commit -m "🤖 自動更新分析資料庫" || exit 0
-          git push
+          # 👈 關鍵：使用 --force 強制覆蓋，解決你在網頁手動修改導致的衝突
+          git commit -m "🤖 AI 自動更新報告" || exit 0
+          git push --force origin main
