@@ -1,5 +1,4 @@
 name: Daily AI Report Update
-
 on:
   workflow_dispatch:
   schedule:
@@ -10,28 +9,26 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: 📦 安裝最新版套件
+      
+      - name: 📦 安裝對應套件
         run: |
-          pip install yfinance pandas numpy google-genai
+          pip install yfinance pandas numpy google-generativeai
 
       - name: 🤖 執行分析
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python update_db.py
 
-      - name: 💾 存檔回 GitHub
+      - name: 💾 強制存檔
         run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          # 👈 關鍵修正：先拉取最新版再推送，避免 Rejected 錯誤
-          git pull --rebase origin main
+          git config --global user.name 'github-actions'
+          git config --global user.email 'github-actions@github.com'
+          git pull --rebase origin main  # 👈 解決 Rejected 的關鍵：先拉再推
           git add ai_database.json
-          git commit -m "🤖 自動更新 AI 盤後深度報告" || exit 0
+          git commit -m "🤖 自動更新報告" || exit 0
           git push
