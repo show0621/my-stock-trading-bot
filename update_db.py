@@ -6,78 +6,62 @@ import json
 import time
 import os
 
-# 🔒 從保險箱讀取 API Key
+# 1. 從系統保險箱拿 API Key
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 TOP_N_STOCKS = 30 
 
-def load_stock_universe(filepath="all_tw_stocks.txt"):
+def load_stock_universe():
     try:
-        with open(filepath, "r", encoding="utf-8") as f:
+        with open("all_tw_stocks.txt", "r", encoding="utf-8") as f:
             return [line.strip() for line in f if line.strip()]
     except:
-        # 如果沒檔案，就用基本名單墊檔
-        return ["2330.TW", "2317.TW", "2454.TW", "2382.TW", "2881.TW", "2603.TW", "1582.TW", "3231.TW", "2303.TW", "3711.TW"]
+        return ["2330.TW", "2317.TW", "2454.TW", "2382.TW", "1582.TW"]
 
 def quant_screener(tickers):
-    print(f"🔍 全市場量化篩選中 (共 {len(tickers)} 檔)...")
+    print(f"🔍 掃描全市場 (共 {len(tickers)} 檔)...")
     try:
         data = yf.download(tickers, period="3mo", group_by="ticker", progress=False)
     except: return []
-    results = []
+    res = []
     if len(tickers) == 1: data = {tickers[0]: data}
-    for ticker in tickers:
+    for t in tickers:
         try:
-            df = data[ticker].dropna() if len(tickers) > 1 else data.dropna()
-            if len(df) < 60: continue
-            vol_ma5 = df['Volume'].rolling(5).mean().iloc[-1]
-            if vol_ma5 < 2000 * 1000: continue # 過濾低成交量
-            s20 = 1 if df['Close'].iloc[-1] > df['Close'].iloc[-20] else -1
-            s60 = 1 if df['Close'].iloc[-1] > df['Close'].iloc[-60] else -1
-            conf = (s20 + s60) / 2
+            df = data[t].dropna()
+            if len(df) < 20: continue
+            vol = df['Volume'].rolling(5).mean().iloc[-1]
+            if vol < 2000 * 1000: continue 
+            conf = 1 if df['Close'].iloc[-1] > df['Close'].iloc[-20] else -1
             pc = (df['Close'].iloc[-1] - df['Close'].iloc[-5]) / df['Close'].iloc[-5]
-            results.append({"symbol": ticker, "score": conf + abs(pc)*10, "last_row": df.iloc[-1], "vol_ma5": vol_ma5})
+            res.append({"sym": t, "score": conf + abs(pc)*10, "row": df.iloc[-1], "vol": vol})
         except: pass
-    return sorted(results, key=lambda x: x["score"], reverse=True)[:TOP_N_STOCKS]
-
-def get_chip_sentiment(r, v_ma):
-    v_r = r['Volume'] / v_ma if v_ma > 0 else 1
-    p_c = (r['Close'] - r['Open']) / r['Open']
-    b_r = abs(r['Close'] - r['Open']) / (r['High'] - r['Low'] + 0.001)
-    if v_r > 2.5 and abs(p_c) < 0.02: return "高檔換手盤 (Hand-over)"
-    if p_c > 0.03 and b_r > 0.7: return "外資進攻盤 (Foreign-Led)"
-    if 0 < p_c < 0.02 and 1.2 < v_r < 2.0: return "投信養券盤 (IT-Led)"
-    if v_r > 1.8 and b_r < 0.3: return "散戶浮額盤 (Retail-Led)"
-    return "法人觀望盤 (Neutral)"
-
-def generate_report(sym, chip):
-    print(f"🔄 AI 深度分析中: {sym}...")
-    try:
-        tkr = yf.Ticker(sym)
-        news = tkr.news
-        info = tkr.info
-        ctx = f"公司:{sym}\n籌碼現況:{chip}\n新聞:{str([n.get('title') for n in news[:5]])}"
-        prompt = f"你是外資首席策略師。資料:{ctx}\n請根據籌碼與新聞進行深度解析。利多利空結尾務必標註(觸及率:XX%)。嚴格輸出JSON:{{利多,利空,展望,利基,題材,機率:{{多,空,盤}}}}"
-        genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        res = model.generate_content(prompt, generation_config=genai.GenerationConfig(response_mime_type="application/json"))
-        return json.loads(res.text), info.get("shortName", sym)
-    except:
-        return {"利多":"AI連線失敗","利空":"-","展望":"-","利基":"-","題材":"-","機率":{"多":33,"空":33,"盤":34}}, sym
+    return sorted(res, key=lambda x: x["score"], reverse=True)[:TOP_N_STOCKS]
 
 def main():
     if not GEMINI_API_KEY:
-        print("❌ 找不到 API Key")
+        print("❌ 找不到 API KEY")
         return
-    top_stocks = quant_screener(load_stock_universe())
-    db = {"MARKET_SUMMARY": {"top_picks": [s["symbol"] for s in top_stocks], "update_time": time.strftime("%Y-%m-%d %H:%M:%S")}}
-    for s in top_stocks:
-        sym, chip = s["symbol"], get_chip_sentiment(s["last_row"], s["vol_ma5"])
-        rep, nm = generate_report(sym, chip)
-        db[sym] = {"name": nm, "report": rep, "chip_type": chip, "update_time": time.strftime("%Y-%m-%d %H:%M:%S")}
-        time.sleep(4) # 避免 API 頻繁請求
+    
+    top_list = quant_screener(load_stock_universe())
+    db = {"MARKET_SUMMARY": {"update_time": time.strftime("%Y-%m-%d %H:%M:%S")}}
+    
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel('gemini-2.0-flash') # 使用最新的穩定版
+    
+    for s in top_list:
+        sym = s["sym"]
+        print(f"分析中: {sym}...")
+        try:
+            tkr = yf.Ticker(sym)
+            ctx = f"公司:{sym}\n新聞:{str([n.get('title') for n in tkr.news[:3]])}"
+            prompt = f"你是外資分析師，針對{ctx}給出利多、利空、展望、利基。必須標註(觸及率:XX%)。輸出JSON格式。"
+            response = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
+            db[sym] = {"report": json.loads(response.text), "update_time": time.strftime("%Y-%m-%d %H:%M:%S")}
+            time.sleep(5) # 避開流量限制
+        except: pass
+        
     with open("ai_database.json", "w", encoding="utf-8") as f:
         json.dump(db, f, ensure_ascii=False, indent=4)
-    print("✅ 資料庫更新完成")
+    print("✅ 資料庫更新成功")
 
 if __name__ == "__main__":
     main()
