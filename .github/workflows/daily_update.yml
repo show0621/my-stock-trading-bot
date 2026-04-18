@@ -1,39 +1,149 @@
-name: Daily AI Report Update
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import google.generativeai as genai
+import json
+import time
+import os
 
-# 設定機器人的鬧鐘
-on:
-  schedule:
-    # 台灣時間下午 3:30 執行 (台灣是 UTC+8，所以填 07:30 UTC)，每週一到週五執行
-    - cron: '30 7 * * 1-5'
-  # 允許我們隨時手動點擊執行
-  workflow_dispatch:
+# 🔐 API Key 設定
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "你的密碼如果不用雲端可以直接寫這裡")
 
-jobs:
-  build:
-    runs-on: ubuntu-latest # 租用一台免費的 Linux 雲端電腦
+# 漏斗設定：每天只挑選最強的幾檔讓 AI 分析？
+TOP_N_STOCKS = 30 
 
-    steps:
-      - name: 📥 下載最新程式碼
-        uses: actions/checkout@v3
+def load_stock_universe(filepath="all_tw_stocks.txt"):
+    """讀取全市場股票名單"""
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            # 讀取每一行並去除空白，過濾掉空行
+            return [line.strip() for line in f if line.strip()]
+    except:
+        print("找不到 all_tw_stocks.txt，使用預設測試名單。")
+        return ["2330.TW", "2317.TW", "2454.TW", "2382.TW", "2881.TW", "2603.TW", "1582.TW", "3231.TW", "2303.TW", "3711.TW"]
 
-      - name: 🐍 安裝 Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
+def quant_screener(tickers):
+    """第一層：極速量化濾網 (純數學過濾)"""
+    print(f"🔍 開始進行全市場量化初篩 (共 {len(tickers)} 檔)...")
+    
+    # 為了加速，使用 yf.download 批量下載最近 3 個月的資料
+    try:
+        data = yf.download(tickers, period="3mo", group_by="ticker", progress=False)
+    except Exception as e:
+        print(f"下載數據失敗: {e}")
+        return []
 
-      - name: 📦 安裝套件
-        run: pip install yfinance pandas numpy google-generativeai
+    results = []
+    
+    # 如果只有一檔股票，yfinance 返回的格式會不同，做個防呆
+    if len(tickers) == 1:
+        data = {tickers[0]: data}
 
-      - name: 🤖 執行 AI 造庫程式
-        env:
-          # 從保險箱拿出密碼給 Python 用
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: python update_db.py
+    for ticker in tickers:
+        try:
+            df = data[ticker].dropna() if len(tickers) > 1 else data.dropna()
+            if len(df) < 60: continue # 資料太短不看
+            
+            # 條件 1：流動性過濾 (近 5 日均量 > 2000 張)
+            vol_ma5 = df['Volume'].rolling(5).mean().iloc[-1]
+            if vol_ma5 < 2000 * 1000: # yfinance 台股 Volume 單位是股，2000張=2百萬股
+                continue
+                
+            # 條件 2：TSMOM 動能初算
+            s20 = 1 if df['Close'].iloc[-1] > df['Close'].iloc[-20] else -1
+            s60 = 1 if df['Close'].iloc[-1] > df['Close'].iloc[-60] else -1
+            confidence = (s20 + s60) / 2 # 簡化版信心
+            
+            # 條件 3：價格乖離與趨勢 (確保不是死水)
+            price_change = (df['Close'].iloc[-1] - df['Close'].iloc[-5]) / df['Close'].iloc[-5]
+            
+            # 綜合評分 (動能 + 爆發力)
+            score = confidence + abs(price_change)*10 
+            
+            # 取得籌碼特徵所需的數據
+            last_row = df.iloc[-1]
+            results.append({
+                "symbol": ticker,
+                "score": score,
+                "last_row": last_row,
+                "vol_ma5": vol_ma5
+            })
+        except:
+            pass # 遇到下市或無資料的股票直接跳過
 
-      - name: 💾 將新的資料庫存回 GitHub
-        run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add ai_database.json
-          git commit -m "🤖 自動更新 AI 盤後報告" || exit 0
-          git push
+    # 按照綜合動能分數排序，選出最強的 Top N
+    results = sorted(results, key=lambda x: x["score"], reverse=True)[:TOP_N_STOCKS]
+    
+    print(f"🎯 量化初篩完成！選出今日動能最強的 {len(results)} 檔股票交由 AI 深度分析。")
+    return results
+
+def get_chip_sentiment(r, v_ma):
+    v_r = r['Volume'] / v_ma if v_ma > 0 else 1
+    p_c = (r['Close'] - r['Open']) / r['Open']
+    b_r = abs(r['Close'] - r['Open']) / (r['High'] - r['Low'] + 0.001)
+    if v_r > 2.5 and abs(p_c) < 0.02: return "高檔換手盤 (Hand-over)"
+    if p_c > 0.03 and b_r > 0.7: return "外資進攻盤 (Foreign-Led)"
+    if 0 < p_c < 0.02 and 1.2 < v_r < 2.0: return "投信養券盤 (IT-Led)"
+    if v_r > 1.8 and b_r < 0.3: return "散戶浮額盤 (Retail-Led)"
+    return "法人觀望盤 (Neutral)"
+
+def generate_report(sym, chip):
+    print(f"🔄 AI 正在深度質化分析: {sym}...")
+    try:
+        tkr = yf.Ticker(sym)
+        news = tkr.news
+        info = tkr.info
+        company_name = info.get("shortName", sym)
+        
+        ctx = f"公司:{company_name}({sym})\n籌碼現況:{chip}\n新聞:{str([n.get('title') for n in news[:5]])}"
+        prompt = f"你是外資策略師。資料:{ctx}\n請根據籌碼與新聞進行深度解析。利多利空結尾加(觸及率:XX%)。嚴格輸出JSON:{{利多,利空,展望,利基,題材,機率:{{多,空,盤}}}} 機率總和100"
+        
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        res = model.generate_content(prompt, generation_config=genai.GenerationConfig(response_mime_type="application/json"))
+        return json.loads(res.text), company_name
+    except Exception as e:
+        print(f"❌ 分析失敗: {e}")
+        return {"利多":"資料庫更新失敗","利空":"-","展望":"-","利基":"-","題材":"-","機率":{"多":33,"空":33,"盤":34}}, sym
+
+def main():
+    if not GEMINI_API_KEY:
+        print("❌ 找不到 API Key！請設定環境變數或直接寫入程式碼。")
+        return
+        
+    print("🚀 啟動全市場 AI 首席投研造庫系統...")
+    
+    # 1. 讀取全市場名單
+    all_tickers = load_stock_universe()
+    
+    # 2. 量化漏斗篩選
+    top_stocks = quant_screener(all_tickers)
+    
+    # 3. AI 深度分析 (只看精華名單)
+    database = {}
+    
+    # 在資料庫中加入一個特殊的標籤，紀錄今天是哪些股票上榜
+    database["MARKET_SUMMARY"] = {
+        "top_picks": [s["symbol"] for s in top_stocks],
+        "update_time": time.strftime("%Y-%m-%d %H:%M:%S")
+    }
+
+    for stock_data in top_stocks:
+        sym = stock_data["symbol"]
+        chip = get_chip_sentiment(stock_data["last_row"], stock_data["vol_ma5"])
+        
+        report, company_name = generate_report(sym, chip)
+        database[sym] = {
+            "name": company_name,
+            "report": report, 
+            "chip_type": chip, 
+            "update_time": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+        time.sleep(4) # 休息 4 秒避免 API 阻擋
+        
+    with open("ai_database.json", "w", encoding="utf-8") as f:
+        json.dump(database, f, ensure_ascii=False, indent=4)
+    print("✅ 今日全市場篩選與 AI 分析完畢！已儲存至 ai_database.json")
+
+if __name__ == "__main__":
+    main()
