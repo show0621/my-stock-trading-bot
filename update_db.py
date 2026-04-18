@@ -6,6 +6,7 @@ import json
 import time
 import os
 
+# 🔒 從保險箱讀取 API Key
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 TOP_N_STOCKS = 30 
 
@@ -14,10 +15,11 @@ def load_stock_universe(filepath="all_tw_stocks.txt"):
         with open(filepath, "r", encoding="utf-8") as f:
             return [line.strip() for line in f if line.strip()]
     except:
+        # 如果沒檔案，就用基本名單墊檔
         return ["2330.TW", "2317.TW", "2454.TW", "2382.TW", "2881.TW", "2603.TW", "1582.TW", "3231.TW", "2303.TW", "3711.TW"]
 
 def quant_screener(tickers):
-    print(f"🔍 量化初篩中 (共 {len(tickers)} 檔)...")
+    print(f"🔍 全市場量化篩選中 (共 {len(tickers)} 檔)...")
     try:
         data = yf.download(tickers, period="3mo", group_by="ticker", progress=False)
     except: return []
@@ -28,15 +30,14 @@ def quant_screener(tickers):
             df = data[ticker].dropna() if len(tickers) > 1 else data.dropna()
             if len(df) < 60: continue
             vol_ma5 = df['Volume'].rolling(5).mean().iloc[-1]
-            if vol_ma5 < 2000 * 1000: continue
+            if vol_ma5 < 2000 * 1000: continue # 過濾低成交量
             s20 = 1 if df['Close'].iloc[-1] > df['Close'].iloc[-20] else -1
             s60 = 1 if df['Close'].iloc[-1] > df['Close'].iloc[-60] else -1
             conf = (s20 + s60) / 2
             pc = (df['Close'].iloc[-1] - df['Close'].iloc[-5]) / df['Close'].iloc[-5]
             results.append({"symbol": ticker, "score": conf + abs(pc)*10, "last_row": df.iloc[-1], "vol_ma5": vol_ma5})
         except: pass
-    results = sorted(results, key=lambda x: x["score"], reverse=True)[:TOP_N_STOCKS]
-    return results
+    return sorted(results, key=lambda x: x["score"], reverse=True)[:TOP_N_STOCKS]
 
 def get_chip_sentiment(r, v_ma):
     v_r = r['Volume'] / v_ma if v_ma > 0 else 1
@@ -49,28 +50,34 @@ def get_chip_sentiment(r, v_ma):
     return "法人觀望盤 (Neutral)"
 
 def generate_report(sym, chip):
-    print(f"🔄 AI 深度分析: {sym}...")
+    print(f"🔄 AI 深度分析中: {sym}...")
     try:
         tkr = yf.Ticker(sym)
-        ctx = f"公司:{sym}\n籌碼現況:{chip}\n新聞:{str([n.get('title') for n in tkr.news[:5]])}"
-        prompt = f"你是外資策略師。資料:{ctx}\n請根據籌碼與新聞進行深度解析。利多利空結尾加(觸及率:XX%)。嚴格輸出JSON:{{利多,利空,展望,利基,題材,機率:{{多,空,盤}}}} 機率總和100"
+        news = tkr.news
+        info = tkr.info
+        ctx = f"公司:{sym}\n籌碼現況:{chip}\n新聞:{str([n.get('title') for n in news[:5]])}"
+        prompt = f"你是外資首席策略師。資料:{ctx}\n請根據籌碼與新聞進行深度解析。利多利空結尾務必標註(觸及率:XX%)。嚴格輸出JSON:{{利多,利空,展望,利基,題材,機率:{{多,空,盤}}}}"
         genai.configure(api_key=GEMINI_API_KEY)
         model = genai.GenerativeModel('gemini-2.5-flash')
         res = model.generate_content(prompt, generation_config=genai.GenerationConfig(response_mime_type="application/json"))
-        return json.loads(res.text), tkr.info.get("shortName", sym)
-    except: return {"利多":"資料庫更新失敗","利空":"-","展望":"-","利基":"-","題材":"-","機率":{"多":33,"空":33,"盤":34}}, sym
+        return json.loads(res.text), info.get("shortName", sym)
+    except:
+        return {"利多":"AI連線失敗","利空":"-","展望":"-","利基":"-","題材":"-","機率":{"多":33,"空":33,"盤":34}}, sym
 
 def main():
-    if not GEMINI_API_KEY: return
+    if not GEMINI_API_KEY:
+        print("❌ 找不到 API Key")
+        return
     top_stocks = quant_screener(load_stock_universe())
-    database = {"MARKET_SUMMARY": {"top_picks": [s["symbol"] for s in top_stocks], "update_time": time.strftime("%Y-%m-%d %H:%M:%S")}}
+    db = {"MARKET_SUMMARY": {"top_picks": [s["symbol"] for s in top_stocks], "update_time": time.strftime("%Y-%m-%d %H:%M:%S")}}
     for s in top_stocks:
         sym, chip = s["symbol"], get_chip_sentiment(s["last_row"], s["vol_ma5"])
         rep, nm = generate_report(sym, chip)
-        database[sym] = {"name": nm, "report": rep, "chip_type": chip, "update_time": time.strftime("%Y-%m-%d %H:%M:%S")}
-        time.sleep(4)
+        db[sym] = {"name": nm, "report": rep, "chip_type": chip, "update_time": time.strftime("%Y-%m-%d %H:%M:%S")}
+        time.sleep(4) # 避免 API 頻繁請求
     with open("ai_database.json", "w", encoding="utf-8") as f:
-        json.dump(database, f, ensure_ascii=False, indent=4)
+        json.dump(db, f, ensure_ascii=False, indent=4)
+    print("✅ 資料庫更新完成")
 
 if __name__ == "__main__":
     main()
