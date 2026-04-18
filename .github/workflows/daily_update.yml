@@ -26,7 +26,7 @@ jobs:
 
       - name: 📦 安裝必要套件
         run: |
-          pip install yfinance pandas numpy google-generativeai
+          pip install yfinance pandas numpy google-genai
 
       - name: 🤖 執行 AI 造庫程式
         env:
