@@ -7,12 +7,23 @@ import google.generativeai as genai
 
 API_KEY = os.environ.get("GEMINI_API_KEY")
 
+def get_available_model(client_genai):
+    """自動尋找可用的 Flash 模型，避免 404 錯誤"""
+    try:
+        for m in client_genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                if 'flash' in m.name.lower():
+                    return m.name
+        return 'gemini-1.5-flash' # 備用方案
+    except:
+        return 'gemini-1.5-flash'
+
 def load_tickers():
     try:
         with open("all_tw_stocks.txt", "r", encoding="utf-8") as f:
             return [line.strip() for line in f if line.strip()]
     except:
-        return ["2330.TW", "2317.TW", "2454.TW", "1582.TW", "2308.TW"]
+        return ["2330.TW", "2317.TW", "2454.TW"]
 
 def main():
     if not API_KEY:
@@ -21,13 +32,14 @@ def main():
 
     genai.configure(api_key=API_KEY)
     
-    # 使用 2026 穩定版 ID 解決 404 錯誤
-    model = genai.GenerativeModel('gemini-2.0-flash')
+    # 自動獲取當前環境支援的模型 ID
+    model_id = get_available_model(genai)
+    print(f"Using model: {model_id}")
+    model = genai.GenerativeModel(model_id)
 
     tickers = load_tickers()
     db = {"update_time": time.strftime("%Y-%m-%d %H:%M:%S")}
 
-    # 測試前 10 檔
     for sym in tickers[:10]:
         print(f"Analyzing {sym}...")
         try:
@@ -53,7 +65,7 @@ def main():
 
     with open("ai_database.json", "w", encoding="utf-8") as f:
         json.dump(db, f, ensure_ascii=False, indent=4)
-    print("✅ 分析完成。")
+    print("Mission accomplished.")
 
 if __name__ == "__main__":
     main()
