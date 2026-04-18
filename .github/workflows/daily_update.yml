@@ -12,32 +12,32 @@ jobs:
       contents: write
 
     steps:
-      - name: 📥 複製代碼
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0 
 
-      - name: 🐍 設定 Python 3.11
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.10'
 
-      - name: 📦 強制精準安裝零件
+      - name: Install dependencies
         run: |
-          # 👈 使用 python -m pip 確保安裝路徑與執行路徑百分之百一致
           python -m pip install --upgrade pip
           python -m pip install yfinance pandas google-generativeai
 
-      - name: 🤖 啟動 AI 大腦
+      - name: Run analysis
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python update_db.py
 
-      - name: 💾 強制存檔
+      - name: Push results
         run: |
-          git config --global user.name 'github-actions'
-          git config --global user.email 'github-actions@github.com'
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          # 先拉取遠端變更，避免 Rejected 錯誤
+          git pull --rebase origin main
           git add ai_database.json
-          git commit -m "🤖 AI 自動更新分析" || exit 0
-          # 👈 使用 --force 排除所有插隊衝突
-          git push --force origin main
+          git commit -m "Automated AI Update" || exit 0
+          git push origin main
