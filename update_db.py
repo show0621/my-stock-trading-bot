@@ -1,20 +1,18 @@
 import os
 import time
+import json
 
 def main():
-    print("✅ [系統通訊測試] Python 引擎已成功啟動！")
-    key = os.environ.get("GEMINI_API_KEY")
-    if key:
-        print("🔑 API Key 偵測狀態：已就緒")
-    else:
-        print("❌ API Key 偵測狀態：未設定 (請檢查 Secrets)")
-    
-    # 建立一個測試用的空資料庫，證明機器人有寫入權限
-    import json
-    test_data = {"test": "success", "time": time.strftime("%Y-%m-%d %H:%M:%S")}
-    with open("ai_database.json", "w") as f:
-        json.dump(test_data, f)
-    print("💾 測試資料庫已寫入。")
+    print("🚀 [大腦啟動成功] 這是真正的 Python 程式！")
+    # 這裡先放一個最簡單的測試，確保流程能跑通
+    result = {
+        "status": "success",
+        "msg": "AI 報告管線已打通",
+        "time": time.strftime("%Y-%m-%d %H:%M:%S")
+    }
+    with open("ai_database.json", "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=4)
+    print("✅ 測試資料庫已存檔成功！")
 
 if __name__ == "__main__":
     main()
