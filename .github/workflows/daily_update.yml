@@ -1,4 +1,5 @@
 name: Daily AI Report Update
+
 on:
   workflow_dispatch:
   schedule:
@@ -9,26 +10,32 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: 📥 複製代碼
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 獲取完整歷史紀錄以利同步
+
+      - name: 🐍 設定環境
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      
-      - name: 📦 安裝對應套件
-        run: |
-          pip install yfinance pandas numpy google-generativeai
 
-      - name: 🤖 執行分析
+      - name: 📦 安裝零件
+        run: |
+          pip install yfinance pandas google-generativeai
+
+      - name: 🤖 啟動大腦
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python update_db.py
 
-      - name: 💾 強制存檔
+      - name: 💾 強制同步並存檔
         run: |
           git config --global user.name 'github-actions'
           git config --global user.email 'github-actions@github.com'
-          git pull --rebase origin main  # 👈 解決 Rejected 的關鍵：先拉再推
+          git pull --rebase origin main  # 👈 這是解決 image_a9736b 錯誤的關鍵！
           git add ai_database.json
-          git commit -m "🤖 自動更新報告" || exit 0
+          git commit -m "🤖 自動更新分析資料庫" || exit 0
           git push
