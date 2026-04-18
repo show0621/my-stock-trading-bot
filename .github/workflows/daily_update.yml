@@ -1,44 +1,35 @@
 name: Daily AI Report Update
 
 on:
-  # 1. 允許手動點擊執行 (測試用)
   workflow_dispatch:
-  # 2. 定期自動執行 (台灣時間 15:30，對應 UTC 07:30)
   schedule:
     - cron: '30 7 * * 1-5'
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    
-    # 給予機器人寫入權限，這對應你剛才在 Settings 修改的設定
     permissions:
       contents: write
 
     steps:
-      - name: 📥 複製專案代碼
-        uses: actions/checkout@v4
-
-      - name: 🐍 設定 Python 環境
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11' # 2026 建議使用 3.11
 
-      - name: 📦 安裝必要套件
+      - name: 📦 安裝最新版套件
         run: |
           pip install yfinance pandas numpy google-genai
 
-      - name: 🤖 執行 AI 造庫程式
+      - name: 🤖 執行分析
         env:
-          # 從 GitHub Secrets 讀取你的 Gemini 鑰匙
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python update_db.py
 
-      - name: 💾 將分析結果存回 GitHub
+      - name: 💾 存檔回 GitHub
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add ai_database.json
-          # 如果資料庫沒變動，就不執行 commit 免得報錯
-          git commit -m "🤖 自動更新 AI 盤後深度報告" || exit 0
+          git commit -m "🤖 更新 AI 報告" || exit 0
           git push
