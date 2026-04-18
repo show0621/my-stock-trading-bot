@@ -5,32 +5,34 @@ import yfinance as yf
 import pandas as pd
 import google.generativeai as genai
 
-# 1. 讀取密鑰
 API_KEY = os.environ.get("GEMINI_API_KEY")
-
-def load_tickers():
-    try:
-        with open("all_tw_stocks.txt", "r", encoding="utf-8") as f:
-            return [line.strip() for line in f if line.strip()]
-    except:
-        return ["2330.TW", "2317.TW", "2454.TW"]
 
 def main():
     if not API_KEY:
-        print("Error: Missing GEMINI_API_KEY")
+        print("Error: Missing API Key")
         return
 
-    # 2. 設定 AI
     genai.configure(api_key=API_KEY)
     
-    # 改用 1.5-flash，這是目前免費層級配額最充足的模型
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # 嘗試使用最穩定的模型名稱
+    model_name = 'gemini-1.5-flash'
+    try:
+        # 測試模型是否存在，若 404 則嘗試加上 models/ 前綴
+        model = genai.GenerativeModel(model_name)
+        model.generate_content("test", generation_config={"max_output_tokens": 1})
+    except Exception:
+        model_name = 'models/gemini-1.5-flash'
+        model = genai.GenerativeModel(model_name)
 
-    tickers = load_tickers()
+    try:
+        with open("all_tw_stocks.txt", "r", encoding="utf-8") as f:
+            tickers = [line.strip() for line in f if line.strip()][:10]
+    except:
+        tickers = ["2330.TW", "2317.TW"]
+
     db = {"update_time": time.strftime("%Y-%m-%d %H:%M:%S")}
 
-    # 測試執行前 5 檔
-    for sym in tickers[:5]:
+    for sym in tickers:
         print(f"Analyzing {sym}...")
         try:
             tkr = yf.Ticker(sym)
@@ -46,15 +48,11 @@ def main():
                 "name": tkr.info.get("shortName", sym),
                 "report": json.loads(response.text)
             }
-            # 👈 關鍵：將延遲拉長到 15 秒，避免免費版帳號頻率限制 (RPM)
-            time.sleep(15)
+            # 延時以符合免費版配額
+            time.sleep(12)
             
         except Exception as e:
-            # 捕捉配額錯誤，避免程式中斷
-            print(f"⚠️ {sym} 略過: {e}")
-            if "429" in str(e):
-                print("停止執行：已達到 API 配額上限，請稍後再試或檢查 Google Cloud 帳單設定。")
-                break
+            print(f"{sym} 略過: {e}")
 
     with open("ai_database.json", "w", encoding="utf-8") as f:
         json.dump(db, f, ensure_ascii=False, indent=4)
