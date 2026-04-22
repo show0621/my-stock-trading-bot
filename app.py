@@ -1,38 +1,67 @@
-import streamlit as st, pandas as pd, plotly.graph_objects as go
-from strategy_engine import get_trading_signal
-st.set_page_config(page_title="李孟霖 | 離線極速投研終端", layout="wide")
-css="<style>:root{color-scheme:light !important;}.stApp,.main{background-color:#F7F3E9 !important;}html,body,p,span,div,h1,h2,h3,h4,h5,h6,label,li{color:#000000 !important;font-family:'Noto Serif TC',serif;}.status-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;background:#FFFFFF;padding:15px;border-radius:10px;border:1px solid #D6D2C4;margin-bottom:20px;}.s-title{font-size:12px;color:#666666;text-align:center;}.s-val{font-size:16px;font-weight:600;color:#000000;text-align:center;}.report-header{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid #E5E1D5;padding-bottom:10px;margin-bottom:15px;}.report-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;font-size:14.5px;line-height:1.7;}@media (max-width:768px){.status-grid{grid-template-columns:repeat(2,1fr);}.report-grid{grid-template-columns:1fr;}}</style>"
-st.markdown(css, unsafe_allow_html=True)
-with st.sidebar:
-    st.title("🎐 極速投資指揮中心")
-    cap = st.number_input("本金設定", value=2000000)
-    im = {"半導體核心":{"台積電 (2330)":"2330.TW","聯發科 (2454)":"2454.TW"},"AI與伺服器":{"鴻海 (2317)":"2317.TW","廣達 (2382)":"2382.TW","緯穎 (6669)":"6669.TW"},"🔍 全台股手動輸入":"MANUAL"}
-    si = st.radio("📁 產業類別", list(im.keys()))
-    if si == "🔍 全台股手動輸入":
-        rc = st.text_input("輸入代號", value="2382")
-        sym, nm = f"{rc}.TW", f"自選 ({rc})"
-    else:
-        nm = st.selectbox("🎯 選擇標的", list(im[si].keys()))
-        sym = im[si][nm]
-with st.spinner("⚡ 載入本地資料庫..."): sig = get_trading_signal(sym, cap)
-if sig:
-    df, l_df, an, sr = sig['history'], pd.DataFrame(sig['ledger']), sig['report'], sig['stats']
-    vr, vs, vsl, vtp = str(int(sr['High'])), str(int(sr['Low'])), str(round(sr['Close']*0.97,1)), str(round(sr['Close']*1.06,1))
-    vc, vv, vw = str(round(sr['Confidence'],2)), str(round(sr['YZ_Vol']*100,1))+"%", str(round(sr['Weight']*100,1))+"%"
-    st.markdown(f'<div class="status-grid"><div><div class="s-title">壓力/支撐</div><div class="s-val">{vr}/{vs}</div></div><div><div class="s-title">停損/停利</div><div class="s-val" style="color:#9F353A;">{vsl}/{vtp}</div></div><div><div class="s-title">信心/波動</div><div class="s-val">{vc}/{vv}</div></div><div><div class="s-title">配置權重</div><div class="s-val" style="color:#B18D4D;">{vw}</div></div><div><div class="s-title">籌碼主導權</div><div class="s-val" style="color:#3A5F41;">{sig["chip_type"]}</div></div></div>', unsafe_allow_html=True)
-    pu, pf, pdn = an.get("機率",{}).get("多",33) if isinstance(an.get("機率"),dict) else 33, an.get("機率",{}).get("盤",34) if isinstance(an.get("機率"),dict) else 34, an.get("機率",{}).get("空",33) if isinstance(an.get("機率"),dict) else 33
-    st.markdown(f'<div style="background:#FFFFFF;padding:20px;border:2px solid #B18D4D;border-radius:12px;color:#000;margin-bottom:20px;"><div class="report-header"><h3 style="margin:0;color:#9F353A;">⚖️ AI 深度投研報告：{nm}</h3><div style="font-size:11px;color:#888;">更新時間: {sig["update_time"]}</div></div><div class="report-grid"><div><b style="color:#9F353A;">【利多分析】</b><br>{an.get("利多","-")}<br><br><b style="color:#3A5F41;">【利空分析】</b><br>{an.get("利空","-")}<br><br><b>【核心利基】</b><br>{an.get("利基","-")}</div><div><b>【法說/籌碼】</b><br>{an.get("題材","-")}<br><br><b>【未來展望】</b><br>{an.get("展望","-")}<br><br><b>【機率分布】</b>多頭 <span style="color:#9F353A;font-weight:bold;">{pu}%</span> | 盤整 {pf}% | 空頭 {pdn}%</div></div></div>', unsafe_allow_html=True)
-    st.markdown(f"### 💰 帳戶淨值：{sig['equity']:,} TWD", unsafe_allow_html=True)
-    if not l_df.empty:
-        c1, c2 = st.columns([1,1])
-        with c1: st.download_button("📥 下載CSV", data=l_df.to_csv(index=False).encode('utf-8-sig'), file_name=f"{nm}_Log.csv", mime="text/csv")
-        with c2: pn = st.number_input("📄 頁碼", 1, max(1,(len(l_df)-1)//10+1), 1)
-        for _, r in l_df.iloc[(pn-1)*10 : pn*10].iterrows():
-            with st.expander(f"📅 {r['日期']} | {r['動作']} | 價格: {r['價格']} | 結算: {r['餘額']:,}"): st.markdown(r['分析'])
-    fig = go.Figure().add_trace(go.Scatter(x=df.index, y=df['Close'], name="收盤價", line=dict(color="#000", width=1.5)))
-    ls, ss = l_df[l_df['動作'].str.contains("買進")], l_df[l_df['動作'].str.contains("平倉")]
-    if not ls.empty: fig.add_trace(go.Scatter(x=pd.to_datetime(ls['日期']), y=ls['價格'], mode='markers', name='進場', marker=dict(symbol='triangle-up', size=16, color='#9F353A')))
-    if not ss.empty: fig.add_trace(go.Scatter(x=pd.to_datetime(ss['日期']), y=ss['價格'], mode='markers', name='出場', marker=dict(symbol='triangle-down', size=16, color='#3A5F41')))
-    fig.update_layout(template="plotly_white", paper_bgcolor="#F7F3E9", plot_bgcolor="#F7F3E9", height=400, margin=dict(l=0,r=0,t=20,b=10))
-    st.plotly_chart(fig, use_container_width=True, config={'displayModeBar':False})
-else: st.error("❌ 系統初始化失敗。")
+import streamlit as st
+import json, os, pandas as pd, yfinance as yf, plotly.graph_objects as go
+
+st.set_page_config(page_title="AI量化分析實驗", layout="wide")
+
+@st.cache_data(ttl=300)
+def load_data():
+    if not os.path.exists("ai_database.json"): return None
+    with open("ai_database.json", "r", encoding="utf-8") as f: return json.load(f)
+
+db = load_data()
+
+# 側邊欄
+st.sidebar.title("🏛️ 投研控制中心")
+industry_mode = st.sidebar.radio("篩選模式", ["主要產業分類", "手動輸入過濾"])
+if db:
+    stocks_dict = db.get("stocks", {})
+    selected_stock = st.sidebar.selectbox("🚀 選擇監控標的", options=list(stocks_dict.keys()))
+else:
+    st.sidebar.error("❌ 找不到 ai_database.json")
+    st.stop()
+
+# 主畫面
+if selected_stock:
+    s = stocks_dict[selected_stock]
+    q, r = s.get("quant", {}), s.get("report", {})
+    
+    st.title(f"📊 {selected_stock} | {s.get('name')} 深度研判報告")
+    st.success(f"**綜合訊號：{r.get('signal')}** | 核心評分：{r.get('scoring')} | 更新：{s.get('time')}")
+
+    # 第一排：量化指標
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("即時現價", q.get("price"))
+    m2.metric("關鍵壓力", q.get("resistance"))
+    m3.metric("關鍵支撐", q.get("support"))
+    m4.metric("YZ 波動率", q.get("yz_vol"))
+    m5.metric("配置權重", f"{int(q.get('weight', 0)*100)}%")
+
+    # 第二排：專業解析
+    c1, c2 = st.columns([2, 1])
+    with c1:
+        st.info(f"**【資深研究主管點評】**\n\n{r.get('industry_analysis')}")
+    with c2:
+        st.write("**多/空/盤機率分佈**")
+        prob = r.get('probability_dist', {"看多": 33, "盤整": 34, "看空": 33})
+        st.bar_chart(pd.DataFrame(list(prob.items()), columns=['D', 'P']).set_index('D'), horizontal=True, height=150)
+
+    # 第三排：五大分頁
+    tabs = st.tabs(["🔭 技術/結構", "💰 籌碼/基本", "🔥 題材/法說", "🛡️ 風險/回測"])
+    with tabs[0]: st.write(r.get("tech_struct"))
+    with tabs[1]: st.write(r.get("chips_base"))
+    with tabs[2]: st.write(f"題材：{r.get('thematic_catalyst')}\n\n法說預期：{r.get('conference_outlook')}")
+    with tabs[3]: 
+        st.write(f"🎯 建議停利：{round(q.get('price',0)*1.1, 2)} | 🛑 建議停損：{q.get('support')}")
+        st.warning(f"YZ 波動率提示：{q.get('yz_vol')}。建議槓桿：{round(0.3/q.get('yz_vol', 1), 2)}x")
+
+    # 第四排：5年回測圖表
+    st.subheader("📈 5 年歷史回測 K 線圖")
+    df_all = yf.download(selected_stock, period="5y", progress=False)
+    fig = go.Figure(data=[go.Candlestick(x=df_all.index, open=df_all['Open'], high=df_all['High'], low=df_all['Low'], close=df_all['Close'])])
+    if "買" in str(r.get("signal")):
+        fig.add_annotation(x=df_all.index[-1], y=df_all['Low'].iloc[-1], text="BUY", showarrow=True, arrowhead=1, bgcolor="red", font=dict(color="white"))
+    st.plotly_chart(fig, use_container_width=True)
+
+    # 底部 CSV
+    csv = pd.DataFrame([{"Ticker": selected_stock, "Price": q.get("price"), "Signal": r.get("signal")}]).to_csv(index=False).encode('utf-8-sig')
+    st.download_button("📥 下載深度研判報告 (CSV)", csv, f"{selected_stock}.csv", "text/csv")
