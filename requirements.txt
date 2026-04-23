@@ -5,3 +5,4 @@ yfinance
 plotly
 groq
 google-genai
+FinMind
